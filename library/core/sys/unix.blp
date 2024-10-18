@@ -1,0 +1,51 @@
+
+pack core::sys::unix {
+
+    pub(pack) alias Handle => Uint64;
+
+    pub(pack) alias Usize => @eval(CPU_BITS == 64):
+        Uint64
+    @else:
+        Uint32
+    @end;
+
+    pub(pack) alias Isize = @eval(CPU_BITS == 64):
+        Int64
+    @else:
+        Int32
+    @end;
+
+    pub(pack) const let SYS_WRITE: Int32 => 4;
+    pub(pack) const let SYS_READ: Int32 => 3;
+    pub(pack) const let SYS_EXIT: Int32 => 1;
+    pub(pack) const let STDOUT: Handle => 1;
+
+    pub(pack) unsafe defun sysWrite(fd: Handle, slice: &[Uint8]) => Handle {
+        let ptr: *unsafe Uint8 => slice.asUnsafePtr;
+        let len: Usize => slice.length;
+        let mut code: Int32 => 0;
+
+        @asm(len => in(reg) len, ptr => in(reg) ptr, fd => in(reg) fd, code => inout(reg) code):
+            "mov rdx, ${len};"
+            "mov rcx, ${ptr};"
+            "mov rbx, ${fd};"
+            "mov rax, 0x04;"
+            "syscall;"
+            "mov ${code}, rax;"
+        @end;
+        code
+    }
+
+    @[NoReturn]
+    pub(pack) unsafe defun sysExit(code: Int32) => Void {
+        @asm(code => in(reg) code, exit => in(reg) SYS_EXIT):
+            "mov rbx, ${code};"
+            "mov rax, ${exit};"
+            "syscall;"
+        @end;
+    }
+
+
+
+
+}

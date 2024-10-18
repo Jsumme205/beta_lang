@@ -1,0 +1,32 @@
+
+pack core::sys {
+    pack unix;
+    pack win;
+    pack alloc;
+
+
+    import pack::alloc::Allocator;
+
+    pub(pack) alias FileDiscriptor = @eval(ARCH == WINDOWS):
+        unsafe Void*
+    @else @eval(ARCH == UNIX):
+        Uint64
+    @end;
+    pub(pack) defun panic(msg: Str) {
+        @eval(OS_FAMILY == UNIX):
+            unsafe {
+                let code => unix::sysWrite(1, unix::STDOUT, msg);
+                if code <= 0 {
+                    unix::sysExit(code);
+                }
+                unix::sysExit(-1)
+            };
+        @else @eval(OS_FAMILY == WINDOWS):
+        @end;
+    }
+
+
+
+
+
+}

@@ -1,0 +1,75 @@
+Goal:
+    Marry Rust and C++
+
+I want to take features I like from Rust and combine them with C++
+
+1. The Preprocessor:
+    Currently I Have 9 Macros:
+        1. @start
+            - sets the start point for the program, or NO_START if it is a package
+            - ex: @start main;
+        2. @eval
+            - evaluates a statement; if false, deletes the code within the statement
+            - ex: @eval(OS == WIN32):
+        3. @else
+            - branch for @eval; tests this condition after
+            - ex: @else @eval(OS == LINUX):
+        4. @for
+            - makes a for that is constexpr; useful for getting the value of a tuple at position N
+            - ex: @for(constexpr let N: Uint64 => 0..4):
+        5. @template
+            - makes a template (usually for numbers) for replacement; useful for arrays
+            - ex: @template(constexpr let N: Uint64):
+        6. @def
+            - defines a number value; local to the file
+            - ex: @def NO_CFG => 1;
+        7. @external
+            - adds symbols that are externally linked;
+            - ex: @external "windows.h":
+        8. @macro
+            - defines a macro
+            - ex: @defun printMacro()
+        9. @end
+            - ends a Preprocessor statemnent
+            - ex: @end;
+
+2. Types:
+    There are 6 core reference types:
+        1. T: Owns a type T, immutable,
+        2. &T: Borrows a type T, immutable
+            - Rules:
+                - the type it borrows from must be valid througout the lifetime of the object
+                - if the type it borrows from ever becomes invalid while the borrow is still valid,
+                    behavior becomes undefined if read from borrow
+                    - ex:
+                        let foo: Int64 => 0;
+                        let bar: &Int64 => &foo;
+                        decon(foo);
+                        out.println(bar); // Results in undefined behavior
+                - borrow can never borrow from a value that is not initalized
+        3. &&T: Used in functions; moves a value T into the local scope.
+                At function end, it gets dropped, immutable
+                ex:
+                    let mut foo: Int64 => 0;
+                    let bar: Int64 => &&foo;
+        4. mut T: Owns a type T, mutable
+        5. &mut T, Borrows a type T, mutable
+            - Rules:
+                - the type it borrows from must be valid througout the lifetime of the object
+                - if the type it borrows from ever becomes invalid while the borrow is still valid,
+                    behavior becomes undefined if read from borrow
+                    - ex:
+                        let mut foo: Int64 => 0;
+                        let bar: &mut Int64 => &mut foo;
+                        decon(foo);
+                        out.println(bar); // Results in undefined behavior
+                - borrow can never borrow from a value that is not initalized
+                - a there can only be one mutable borrow at any one time for a certain object
+        6. &&mut T: Used in functions; moves a value T into the local scope.
+                At function end, it gets dropped, mutable
+                ex: in a function
+
+                pub defun foo(x: &&mut Int64) => Int32 { ... }
+
+                let mut bar: Int64 => 0;
+                let baz: Int32 => foo(&&mut bar);

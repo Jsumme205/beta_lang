@@ -1,0 +1,47 @@
+
+
+pack core::result {
+
+    pub trait Result<T, E> {
+        pub consumer defun unwrap() => T;
+        pub consumer defun unwrap(d: defun[mut...]() => T) => T;
+        pub consumer defun unwrap(val: T) => T;
+
+        pub unsafe defun asPtr() => *unsafe T;
+        pub unsafe consumer defun toPtr() => *unsafe T;
+
+        pub consumer defun map<U, F>(f: defun[mut...](&&This) => obj Result<U, F>) => obj Result<U, F>;
+        pub defun isOkay() => Bool;
+        pub defun isError() => Bool;
+    }
+
+    pub enum CoreResult<T, E>: Result<T, E> {
+        priv case Okay(T);
+        priv case Error(E);
+
+
+        pub con(value: T) => This {
+            This.Okay(value)
+        }
+
+        pub con(value: E) => This {
+            This.Error(value)
+        }
+
+        pub consumer defun unwrap() => T {
+            switch this {
+                This.Okay(value) => value,
+                This.Error(_) => sys::panic("Attempted to unwrap an error value")
+            }
+        }
+
+        pub consumer defun unwrap(d: defun[mut...]() => T) => T {
+            switch this {
+                This.Okay(v) => v,
+                This.Error(_) d()
+            }
+        }
+    }
+
+
+}

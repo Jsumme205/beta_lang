@@ -1,0 +1,21 @@
+
+
+pack core::alloc {
+
+    pub trait Allocator {
+        alias Layout;
+        pub mut unsafe defun allocate(layout: This.Layout) throws => *Uint8;
+        pub mut unsafe defun deallocate(ptr: *Uint8, layout: This.Layout) throws => Void;
+    }
+
+    pub trait LocalAllocator: Allocator {
+        alias Output;
+
+        pub mut unsafe defun allocateNum(number: Uint64) throws => *[This.Output];
+        pub mut unsafe defun deallocateNum(slice: *[This.Output]) throws => Void;
+
+    }
+
+
+
+}
