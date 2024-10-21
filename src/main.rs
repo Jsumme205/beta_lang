@@ -3,18 +3,15 @@
 #![feature(box_into_inner)]
 #![feature(allocator_api)]
 #![feature(iterator_try_collect)]
+#![feature(iter_collect_into)]
 #![feature(cell_update)]
 
 use std::{collections::HashMap, fmt::Debug};
 
-use betac_backend::{IrCodegen, WriteIr};
-use betac_lexer::ast_types::context::{GlobalContext, PackageContext};
-use betac_util::{session::Session, sso::OwnedYarn, Yarn};
+use betac_lexer::SourceCodeReader;
+use betac_util::{session::Session, Yarn};
 
 pub const DEFAULT_PATTERN: [char; 2] = [';', ' '];
-
-const TOKEN_PATTERNS: [betac_lexer::ast_types::Token<'static>; 1] =
-    [betac_lexer::ast_types::Token::Semi];
 
 #[derive(Debug)]
 pub struct Globals {
@@ -43,20 +40,7 @@ mod betac_util;
 
 fn main() -> betac_util::CompileResult<()> {
     let mut session = Session::builder().input("src/test.blp").build()?;
-    let mut package_ctx = PackageContext::init();
-    let ctx = GlobalContext::init("dummy", &mut package_ctx);
-
-    let input = yarn!("pub defun foo(x: Uint32) => Uint32 {{ x + y }}");
-    let mut lexer = betac_lexer::Lexer::init(&input, &mut session);
-    let expr = lexer.parse_next_expr(ctx).unwrap();
-    println!("expr: {expr:#?}");
-    //let next_expr = lexer.parse_next_expr(&mut ctx).unwrap();
-    //println!("{next_expr:#?}");
-    let mut codegen = IrCodegen::init();
-    let _ = expr.lower(&mut codegen);
-
-    println!("result:\n{}", codegen.as_str());
-
-    //out_file.write_all(&out_buf)?;
+    let input = yarn!("let x: Int64 => 0;");
+    let mut source = SourceCodeReader::init(&input, &mut session);
     Ok(())
 }

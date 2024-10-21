@@ -65,6 +65,7 @@ pub trait Context<'scope> {
     fn enter_symbol_into_parent_scope(&mut self, sym: Yarn<'static>, kind: SymbolKind) -> bool;
 }
 
+#[derive(Debug)]
 pub struct PackageContext {
     global_contexts: HashMap<Yarn<'static>, Rc<RwLock<GlobalContext>>>,
 }
@@ -75,6 +76,12 @@ impl PackageContext {
             global_contexts: Default::default(),
         }
     }
+
+    pub fn get_global_context(&self, name: &'static str) -> Option<Rc<RwLock<GlobalContext>>> {
+        self.global_contexts
+            .get(&Yarn::constant(name))
+            .map(|rc| rc.clone())
+    }
 }
 
 #[derive(Debug)]
@@ -83,14 +90,13 @@ pub struct GlobalContext {
 }
 
 impl GlobalContext {
-    pub fn init(name: &'static str, ctx: &mut PackageContext) -> Rc<RwLock<Self>> {
+    pub fn init(name: &'static str, ctx: &mut PackageContext) -> &'static str {
         let this = Self {
             global_symbols: Default::default(),
         };
         let this = Rc::new(RwLock::new(this));
-        ctx.global_contexts
-            .insert(Yarn::constant(name), this.clone());
-        this
+        ctx.global_contexts.insert(Yarn::constant(name), this);
+        name
     }
 
     pub fn global_symbols(&self) -> &FxHashMap<Yarn<'static>, SymbolKind> {

@@ -4,14 +4,14 @@ use std::{
     hash::Hasher,
     ops::BitXor,
     path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Mutex,
-    },
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use super::sso::OwnedYarn;
-use crate::{betac_lexer::ast_types::Ty, Globals};
+use crate::{
+    betac_lexer::ast_types::{context::PackageContext, Ty},
+    Globals,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Options(usize);
@@ -25,10 +25,10 @@ pub struct Session {
     pub globals: crate::Globals,
     pub contents: OwnedYarn,
     pub out_dir: Option<PathBuf>,
-    //pub span_interner: Lock<SpanInterner>,
     pub options: usize,
     pub type_ids: AtomicUsize,
     pub types_hashmap: HashMap<usize, OwnedYarn, BuildHasherDefault<FxHasher>>,
+    pub package_context: PackageContext,
 }
 
 pub struct FxHasher {
@@ -163,6 +163,7 @@ impl SessionBuilder {
             options: self.options,
             type_ids: AtomicUsize::new(Ty::OFFSET_FROM_BUILTIN),
             types_hashmap: HashMap::with_hasher(BuildHasherDefault::default()),
+            package_context: PackageContext::init(),
         })
     }
 }

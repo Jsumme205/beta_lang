@@ -1,5 +1,6 @@
 use crate::{
     betac_backend::WriteIr,
+    betac_packer::pack::Vis,
     betac_util::{session::Session, sso::OwnedYarn, Yarn},
     yarn,
 };
@@ -8,10 +9,12 @@ use std::{fmt::Debug, io::Write, os::unix::io};
 pub mod assignment;
 pub mod context;
 pub mod defun;
+pub mod imports;
 
 pub use assignment::AssignmentMeta;
 use context::ContextKind;
 use defun::{Argument, DefunMeta};
+use imports::ImportMeta;
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub enum Token<'src> {
@@ -25,16 +28,17 @@ pub enum Token<'src> {
     EqEq([u8; 2]),
     Whitespace,
     Colon,
+    Path,
     Semi,
     #[default]
     Eof,
-    // {
+    /// {
     LeftBrace,
-    // }
+    /// }
     RightBrace,
-    // [
+    /// [
     LeftBracket,
-    // ]
+    /// ]
     RightBracket,
     LeftParen,
     RightParen,
@@ -81,11 +85,47 @@ impl<'src> Token<'src> {
         }
     }
 
+    pub fn as_ident(&self) -> Option<&Yarn<'src>> {
+        match self {
+            Self::Ident(id) => Some(id),
+            _ => None,
+        }
+    }
+
     pub fn as_binop(&self) -> Option<BinOp> {
         match self {
             Self::Plus => Some(BinOp::Plus),
             Self::Minus => Some(BinOp::Minus),
             _ => None,
+        }
+    }
+
+    pub fn ident_is_expr_start(&self) -> bool {
+        match self {
+            Token::Ident(id) => match id.as_str() {
+                "import" | "let" | "obj" | "comp" | "defun" | "pack" | "constexpr" => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    pub fn ident_is_modifier(&self) -> bool {
+        match self {
+            Token::Ident(id) => match id.as_str() {
+                "constexpr" | "mut" | "static" | "pub" => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+    pub fn ident_is_keyword(&self) -> bool {
+        match self {
+            Token::Ident(id) => match id.as_str() {
+                "import" | "let" | "obj" | "comp" | "defun" | "pub" => true,
+                _ => false,
+            },
+            _ => false,
         }
     }
 }
@@ -211,6 +251,11 @@ pub enum Expr<'src> {
         return_ty: Ty,
         ident: OwnedYarn,
     },
+    Import {
+        meta: ImportMeta,
+        root: Yarn<'src>,
+        rest: Vec<Yarn<'src>>,
+    },
     Eof,
 }
 
@@ -237,5 +282,82 @@ impl WriteIr for BinOp {
             _ => todo!(),
         };
         Ok(())
+    }
+}
+
+pub const STATIC: u8 = 1 << 1;
+pub const CONSTEXPR: u8 = 1 << 2;
+pub const MUTABLE: u8 = 1 << 3;
+pub const PUBLIC: u8 = 1 << 4;
+
+pub trait Metadata: Copy {
+    fn init() -> Self;
+    fn add_flag(self, flag: u8) -> Self;
+
+    fn is_public(&self) -> bool {
+        self.flag_set(PUBLIC)
+    }
+
+    fn is_constexpr(&self) -> bool {
+        self.flag_set(CONSTEXPR)
+    }
+
+    fn is_mutable(&self) -> bool {
+        self.flag_set(MUTABLE)
+    }
+
+    fn is_static(&self) -> bool {
+        self.flag_set(STATIC)
+    }
+
+    fn flag_set(&self, flag: u8) -> bool;
+
+    fn to_vis(self) -> Vis {
+        if self.is_public() {
+            Vis::Public
+        } else {
+            Vis::Private
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub union AnyMetadata {
+    defun: DefunMeta,
+    assignment: AssignmentMeta,
+    import: ImportMeta,
+}
+
+impl AnyMetadata {
+    pub fn to_defun(self) -> DefunMeta {
+        unsafe { self.defun }
+    }
+
+    pub fn to_assignment(self) -> AssignmentMeta {
+        unsafe { self.assignment }
+    }
+
+    pub fn to_import(self) -> ImportMeta {
+        unsafe { self.import }
+    }
+}
+
+impl Metadata for AnyMetadata {
+    fn init() -> Self {
+        Self {
+            defun: DefunMeta::init(),
+        }
+    }
+
+    fn add_flag(self, flag: u8) -> Self {
+        let this = unsafe { self.defun };
+        Self {
+            defun: this.add_flag(flag),
+        }
+    }
+
+    fn flag_set(&self, flag: u8) -> bool {
+        let this = unsafe { self.defun };
+        this.flag_set(flag)
     }
 }
