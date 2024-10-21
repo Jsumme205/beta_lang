@@ -4,7 +4,11 @@ use crate::{
     betac_util::{session::Session, sso::OwnedYarn, Yarn},
     yarn,
 };
-use std::{fmt::Debug, io::Write, os::unix::io};
+use std::{
+    fmt::Debug,
+    io::Write,
+    os::{fd::RawFd, unix::io},
+};
 
 pub mod assignment;
 pub mod context;
@@ -17,7 +21,7 @@ use defun::{Argument, DefunMeta};
 use imports::ImportMeta;
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
-pub enum Token<'src> {
+pub enum RawToken<'src> {
     Plus,
     Minus,
     Assign,
@@ -43,6 +47,46 @@ pub enum Token<'src> {
     LeftParen,
     RightParen,
     Comma,
+    NewLine,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
+pub struct Token<'src> {
+    start: u32,
+    end: u32,
+    inner: RawToken<'src>,
+}
+
+impl<'src> Token<'src> {
+    pub fn new(raw: RawToken<'src>, start: u32, end: u32) -> Self {
+        Self {
+            start,
+            end,
+            inner: raw,
+        }
+    }
+
+    pub fn as_raw(&self) -> &RawToken<'src> {
+        &self.inner
+    }
+
+    pub fn is_ident(&self) -> bool {
+        match &self.inner {
+            RawToken::Ident(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_whitespace(&self) -> bool {
+        match &self.inner {
+            RawToken::Whitespace => true,
+            _ => false,
+        }
+    }
+
+    pub fn as_span(&self) -> (usize, usize) {
+        (self.start as usize, self.end as usize)
+    }
 }
 
 pub enum IdentOrLit<'src> {
@@ -53,56 +97,56 @@ pub enum IdentOrLit<'src> {
 
 impl<'src> Token<'src> {
     pub fn is_sep(&self) -> bool {
-        use Token::*;
-        match self {
+        use RawToken::*;
+        match self.inner {
             Whitespace | Colon | Semi | Comma | RightParen => true,
             _ => false,
         }
     }
 
     pub fn is_end(&self) -> bool {
-        use Token::*;
-        match self {
+        use RawToken::*;
+        match self.inner {
             Eof | RightBrace | RightBracket | Semi => true,
             _ => false,
         }
     }
 
     pub fn number_or_ident(&self) -> Option<IdentOrLit<'src>> {
-        match self {
-            Token::Ident(id) => Some(IdentOrLit::Ident(id.clone())),
-            Token::LitStr(lit) => Some(IdentOrLit::Str(lit.clone())),
-            Token::Number(num) => Some(IdentOrLit::Number(num.clone())),
+        match &self.inner {
+            RawToken::Ident(id) => Some(IdentOrLit::Ident(id.clone())),
+            RawToken::LitStr(lit) => Some(IdentOrLit::Str(lit.clone())),
+            RawToken::Number(num) => Some(IdentOrLit::Number(num.clone())),
             _ => None,
         }
     }
 
     pub fn is_operator(&self) -> bool {
-        use Token::*;
-        match self {
+        use RawToken::*;
+        match self.inner {
             Plus | Minus => true,
             _ => false,
         }
     }
 
     pub fn as_ident(&self) -> Option<&Yarn<'src>> {
-        match self {
-            Self::Ident(id) => Some(id),
+        match &self.inner {
+            RawToken::Ident(id) => Some(id),
             _ => None,
         }
     }
 
     pub fn as_binop(&self) -> Option<BinOp> {
-        match self {
-            Self::Plus => Some(BinOp::Plus),
-            Self::Minus => Some(BinOp::Minus),
+        match &self.inner {
+            RawToken::Plus => Some(BinOp::Plus),
+            RawToken::Minus => Some(BinOp::Minus),
             _ => None,
         }
     }
 
     pub fn ident_is_expr_start(&self) -> bool {
-        match self {
-            Token::Ident(id) => match id.as_str() {
+        match &self.inner {
+            RawToken::Ident(id) => match id.as_str() {
                 "import" | "let" | "obj" | "comp" | "defun" | "pack" | "constexpr" => true,
                 _ => false,
             },
@@ -111,8 +155,8 @@ impl<'src> Token<'src> {
     }
 
     pub fn ident_is_modifier(&self) -> bool {
-        match self {
-            Token::Ident(id) => match id.as_str() {
+        match &self.inner {
+            RawToken::Ident(id) => match id.as_str() {
                 "constexpr" | "mut" | "static" | "pub" => true,
                 _ => false,
             },
@@ -120,13 +164,19 @@ impl<'src> Token<'src> {
         }
     }
     pub fn ident_is_keyword(&self) -> bool {
-        match self {
-            Token::Ident(id) => match id.as_str() {
+        match &self.inner {
+            RawToken::Ident(id) => match id.as_str() {
                 "import" | "let" | "obj" | "comp" | "defun" | "pub" => true,
                 _ => false,
             },
             _ => false,
         }
+    }
+}
+
+impl PartialEq<RawToken<'_>> for Token<'_> {
+    fn eq(&self, other: &RawToken) -> bool {
+        self.inner == *other
     }
 }
 

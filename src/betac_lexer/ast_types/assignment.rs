@@ -1,5 +1,5 @@
 use super::super::Lexer;
-use super::{Expr, Metadata, Token};
+use super::{Expr, Metadata, RawToken, Token};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -29,34 +29,34 @@ impl<'a> Lexer<'a> {
         let mut paren_count = 0;
         let mut paren_entered = false;
         // collect the expression, this is kind of why we're using `Rc` everywhere, for cheap cloning
-        while *self.currently_evaluated_token != Token::Semi
-            && brace_count == 0
-            && brace_entered
-            && paren_count == 0
-            && paren_entered
+        while *self.currently_evaluated_token != RawToken::Semi && brace_count == 0
+            || brace_entered && paren_count == 0
+            || paren_entered
         {
-            match &*self.currently_evaluated_token {
-                Token::Eof => break,
-                Token::LeftBrace => {
+            println!("got to here_38");
+            match &self.currently_evaluated_token.inner {
+                RawToken::Eof => break,
+                RawToken::LeftBrace => {
                     if !brace_entered {
                         brace_entered = true;
                     }
                     brace_count += 1;
                 }
-                Token::RightBrace => {
+                RawToken::RightBrace => {
                     brace_count -= 1;
                 }
-                Token::LeftParen => {
+                RawToken::LeftParen => {
                     if !paren_entered {
                         paren_entered = true;
                     }
                     paren_count += 1;
                 }
-                Token::RightParen => {
+                RawToken::RightParen => {
                     brace_count -= 1;
                 }
                 _ => {}
             }
+            println!("current_60: {:#?}", self.currently_evaluated_token);
             current_tokens.push(self.currently_evaluated_token.clone());
             self.advance();
         }

@@ -8,7 +8,7 @@
 
 use std::{collections::HashMap, fmt::Debug};
 
-use betac_lexer::SourceCodeReader;
+use betac_lexer::{Lexer, SourceCodeReader};
 use betac_util::{session::Session, Yarn};
 
 pub const DEFAULT_PATTERN: [char; 2] = [';', ' '];
@@ -41,6 +41,7 @@ mod betac_util;
 fn main() -> betac_util::CompileResult<()> {
     let mut session = Session::builder().input("src/test.blp").build()?;
     let input = yarn!("let x: Int64 => 0;");
-    let mut source = SourceCodeReader::init(&input, &mut session);
+    let mut lexer = Lexer::init(&input, &mut session);
+    let _ = lexer.parse_next_expr();
     Ok(())
 }
