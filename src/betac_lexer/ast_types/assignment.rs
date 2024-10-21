@@ -1,5 +1,8 @@
 use super::super::Lexer;
 use super::{Expr, Metadata, RawToken, Token};
+use crate::betac_errors::{BetaError, Emitter, ErrorBuilder};
+use crate::betac_lexer::ast_types::MUTABLE;
+use crate::betac_util::Yarn;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -22,7 +25,7 @@ impl Metadata for AssignmentMeta {
 
 impl<'a> Lexer<'a> {
     // let x: Int64 => 0;
-    pub(in super::super) fn assignment(&mut self, meta: AssignmentMeta) -> Option<Expr<'a>> {
+    pub(in super::super) fn assignment(&mut self, mut meta: AssignmentMeta) -> Option<Expr<'a>> {
         let mut current_tokens = vec![];
         let mut brace_count = 0;
         let mut brace_entered = false;
@@ -54,6 +57,7 @@ impl<'a> Lexer<'a> {
                 RawToken::RightParen => {
                     brace_count -= 1;
                 }
+                //RawToken::Semi => {}
                 _ => {}
             }
             println!("current_60: {:#?}", self.currently_evaluated_token);
@@ -61,8 +65,56 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
 
+        let current_tokens = current_tokens
+            .into_iter()
+            .filter(|token| !token.is_whitespace())
+            .collect::<Vec<_>>();
+
+        if !current_tokens[0].as_ident().is_some_and(|id| id == "let") {
+            self.emit()
+                .message(format!(
+                    "expected keyword `let`, found: {:#?}",
+                    current_tokens[0]
+                ))
+                .token(current_tokens[0])
+                .finish_and_report();
+        }
+
+        let mut ident = Yarn::empty();
+        if current_tokens[1].as_ident().is_some_and(|id| id == "mut") {
+            meta = meta.add_flag(MUTABLE);
+        } else {
+            match current_tokens[1].as_ident() {
+                None => {
+                    self.emit()
+                        .message(format!(
+                            "exppected ident, found {:#?}",
+                            current_tokens[1].as_raw()
+                        ))
+                        .token(current_tokens[1])
+                        .finish_and_report();
+                }
+                Some(id) => ident = id.clone(),
+            }
+        }
+
+        if *current_tokens[2].as_raw() != RawToken::Colon {
+            let current = current_tokens[2].clone();
+            self.emit()
+                .line(current.line as usize)
+                .column(current.column as usize)
+                .message(format!("expected colon, found: {:#?}", current.as_raw()))
+                .token(current)
+                .finish_and_report();
+        }
+
         println!("tokens_64_assignment.rs: {current_tokens:#?}");
 
-        None
+        Some(Expr::Assignment {
+            ident,
+            ty: (),
+            value: (),
+            meta,
+        })
     }
 }

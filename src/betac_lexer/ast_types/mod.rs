@@ -55,14 +55,18 @@ pub struct Token<'src> {
     start: u32,
     end: u32,
     inner: RawToken<'src>,
+    line: u32,
+    column: u32,
 }
 
 impl<'src> Token<'src> {
-    pub fn new(raw: RawToken<'src>, start: u32, end: u32) -> Self {
+    pub fn new(raw: RawToken<'src>, start: u32, end: u32, line: u32, column: u32) -> Self {
         Self {
             start,
             end,
             inner: raw,
+            line,
+            column,
         }
     }
 

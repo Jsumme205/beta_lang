@@ -525,6 +525,12 @@ impl<'a, 'b> PartialEq<&'b str> for Yarn<'a> {
     }
 }
 
+impl PartialEq<str> for Yarn<'_> {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
 impl<'a> Eq for Yarn<'a> {}
 
 impl<'a, 'b> PartialEq<Yarn<'b>> for Yarn<'a> {

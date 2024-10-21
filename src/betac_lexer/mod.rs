@@ -1,10 +1,14 @@
 pub mod ast_types;
 
-use std::rc::Rc;
+use std::{
+    rc::Rc,
+    sync::{atomic::AtomicBool, RwLock},
+};
 
 use ast_types::{AnyMetadata, Metadata, Token, CONSTEXPR, PUBLIC, STATIC};
 
 use crate::{
+    betac_errors::LexerError,
     betac_pp::cursor::CursorLike,
     betac_util::{self, session::Session, sso::Bytes, Yarn},
 };
@@ -29,7 +33,7 @@ impl<'a> SourceCodeReader<'a> {
         }
     }
 
-    pub fn next_token(&mut self) -> Rc<ast_types::Token<'a>> {
+    pub fn next_token(&mut self, nl_count: u32) -> Rc<ast_types::Token<'a>> {
         let start = self.pos;
         let (raw_token, pos) = match self.bump().unwrap_or('\0') {
             '\0' => (ast_types::RawToken::Eof, 1),
@@ -63,7 +67,13 @@ impl<'a> SourceCodeReader<'a> {
         };
 
         self.column += pos;
-        Rc::new(Token::new(raw_token, start, start + pos))
+        Rc::new(Token::new(
+            raw_token,
+            start,
+            start + pos,
+            nl_count,
+            self.column,
+        ))
     }
 
     pub fn column(&self) -> u32 {
@@ -108,7 +118,7 @@ impl<'a> Iterator for SourceCodeReader<'a> {
     type Item = Rc<ast_types::Token<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.next_token();
+        let next = self.next_token(0);
         if *next == ast_types::RawToken::Eof {
             None
         } else {
@@ -170,6 +180,8 @@ pub struct Lexer<'a> {
     currently_evaluated_token: Rc<ast_types::Token<'a>>,
     session: &'a mut Session,
     nl_count: usize,
+    pub(crate) errors: RwLock<Vec<LexerError<'a>>>,
+    pub(crate) guard: AtomicBool,
 }
 
 impl<'a> Lexer<'a> {
@@ -177,18 +189,28 @@ impl<'a> Lexer<'a> {
         let mut token_reader = SourceCodeReader::init(input);
         Self {
             last_significant_token: Rc::default(),
-            currently_evaluated_token: token_reader.next_token(),
+            currently_evaluated_token: token_reader.next_token(0),
             token_reader,
             session,
             nl_count: 0,
+            errors: RwLock::new(Vec::new()),
+            guard: AtomicBool::new(false),
         }
+    }
+
+    pub fn nl_count(&self) -> usize {
+        self.nl_count
+    }
+
+    pub fn column(&self) -> usize {
+        self.token_reader.column as usize
     }
 
     pub(self) fn advance(&mut self) {
         if *self.currently_evaluated_token.as_raw() != ast_types::RawToken::Whitespace {
             self.last_significant_token = self.currently_evaluated_token.clone();
         }
-        self.currently_evaluated_token = self.token_reader.next_token();
+        self.currently_evaluated_token = self.token_reader.next_token(self.nl_count as u32);
         if *self.currently_evaluated_token.as_raw() == ast_types::RawToken::NewLine {
             self.nl_count += 1;
         }
