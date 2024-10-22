@@ -43,7 +43,7 @@ impl<'a> SourceCodeReader<'a> {
             '(' => (ast_types::RawToken::LeftParen, 1),
             '{' => (ast_types::RawToken::LeftBrace, 1),
             '[' => (ast_types::RawToken::LeftBracket, 1),
-            ')' => (ast_types::RawToken::LeftParen, 1),
+            ')' => (ast_types::RawToken::RightParen, 1),
             '}' => (ast_types::RawToken::RightBrace, 1),
             ']' => (ast_types::RawToken::RightBracket, 1),
             ':' if CursorLike::next(self) == ':' => {
@@ -278,15 +278,16 @@ impl<'a> Lexer<'a> {
                 // e.g imports.rs contains `Lexer::import()`, assignment.rs contains `Lexer::assignment()`
                 expr_begin if self.currently_evaluated_token.ident_is_expr_start() => {
                     println!("got to 182");
+                    let g_ctx = self.session.get_current_context();
+                    let g_ctx = g_ctx.write().unwrap();
+                    println!("got to let");
+                    let mut ctx = match fn_context {
+                        Some(ctx) => FnCtxOrGlobalCtx::Fn(ctx),
+                        None => FnCtxOrGlobalCtx::Global(g_ctx),
+                    };
                     match expr_begin.as_ident().unwrap().as_str() {
                         "let" => {
-                            let g_ctx = self.session.get_current_context();
-                            let g_ctx = g_ctx.write().unwrap();
                             println!("got to let");
-                            let mut ctx = match fn_context {
-                                Some(ctx) => FnCtxOrGlobalCtx::Fn(ctx),
-                                None => FnCtxOrGlobalCtx::Global(g_ctx),
-                            };
                             return self.assignment(meta.to_assignment(), &mut ctx);
                         }
                         "import" => {
@@ -295,7 +296,7 @@ impl<'a> Lexer<'a> {
                         }
                         "defun" => {
                             println!("got to defun");
-                            return self.defun(meta.to_defun());
+                            return self.defun(meta.to_defun(), &mut ctx);
                         }
                         _ => todo!(),
                     }

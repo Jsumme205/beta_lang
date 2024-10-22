@@ -4,6 +4,7 @@
 #![feature(allocator_api)]
 #![feature(iterator_try_collect)]
 #![feature(iter_collect_into)]
+#![feature(iter_array_chunks)]
 #![feature(cell_update)]
 
 use std::{collections::HashMap, fmt::Debug};

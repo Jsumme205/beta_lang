@@ -16,8 +16,14 @@ pub type FxHashMap<K, V> = HashMap<K, V>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SymbolKind {
+    /// `0`: the type of the assignment \n
+    /// `1`: the visibilty of the assignment
     Assignment(Ty, Vis),
+    /// `0`: the visibility of the alias
     Alias(Vis),
+    /// `0`: the return type of the function \n
+    /// `1`: the types of the function arguments \n
+    /// `2`: the visibilty of the function
     Function(Ty, Vec<Ty>, Vis),
 }
 

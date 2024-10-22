@@ -195,6 +195,12 @@ impl PartialEq<RawToken> for Token {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ty(usize);
 
+impl Default for Ty {
+    fn default() -> Self {
+        Self::TY_UNKNOWN
+    }
+}
+
 impl Ty {
     pub const OFFSET_FROM_BUILTIN: usize = 10;
 
@@ -230,7 +236,7 @@ impl Ty {
         panic!("type already found");
     }
 
-    pub fn try_get(yarn: OwnedYarn, _session: &Session) -> Option<Self> {
+    pub fn try_get(yarn: Yarn<'_>, _session: &Session) -> Option<Self> {
         match yarn.as_str() {
             "Int8" => Some(Ty::TY_INT8),
             "Int16" => Some(Ty::TY_INT16),
