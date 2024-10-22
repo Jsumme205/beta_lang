@@ -6,6 +6,8 @@ use std::{
     sync::atomic::Ordering,
 };
 
+/// I honestly don't know why this is so complex, but I wanted to make it very builder-style,
+/// so it turned out like this
 use crate::betac_lexer::{
     ast_types::{Expr, Token},
     Lexer,
@@ -221,6 +223,7 @@ impl<'a, E: Emitter<'a, Error = LexerEntry>> BetaError for LexerError<'a, E> {
             message: self.message,
             level: self.level,
         };
+        self.emitter.poison();
         self.emitter.insert_error(entry);
     }
 
@@ -269,31 +272,36 @@ impl<'a> Emitter<'a> for Lexer<'a> {
     }
 
     fn drain(&self) -> io::Result<()> {
-        let mut errors = self.errors.write().unwrap();
-        for error in errors.drain(..) {
-            let (mut io, msg) = match error.level {
-                Level::HardError | Level::SoftError => (Io::Err(io::stderr().lock()), "ERROR:"),
-                Level::Warning => (Io::Out(io::stdout().lock()), "WARNING:"),
-            };
+        // let's check if there are errors in the first place, before we have to loop through all of them
+        if !self.is_poisoned() {
+            let mut errors = self.errors.write().unwrap();
+            for error in errors.drain(..) {
+                let (mut io, msg) = match error.level {
+                    Level::HardError | Level::SoftError => (Io::Err(io::stderr().lock()), "ERROR:"),
+                    Level::Warning => (Io::Out(io::stdout().lock()), "WARNING:"),
+                };
 
-            writeln!(
-                io,
-                "{msg} {} at {}:{}",
-                error.message.unwrap_or_default(),
-                error.line,
-                error.column,
-            )?;
-            writeln!(io, "current_token: {:#?}", error.token.as_raw())?;
-            if error.expr.is_some() {
-                writeln!(io, "expression: {:#?}", error.expr.unwrap())?;
+                writeln!(
+                    io,
+                    "{msg} {} at {}:{}",
+                    error.message.unwrap_or_default(),
+                    error.line,
+                    error.column,
+                )?;
+                writeln!(io, "current_token: {:#?}", error.token.as_raw())?;
+                if error.expr.is_some() {
+                    writeln!(io, "expression: {:#?}", error.expr.unwrap())?;
+                }
             }
+            self.guard.store(false, Ordering::Relaxed);
         }
-        self.guard.store(false, Ordering::Relaxed);
         Ok(())
     }
 }
 
-pub enum Io<'a> {
+/// forwarding implemetation to be able to write to both the stdout and stderr handles
+/// without weird stuff
+enum Io<'a> {
     Err(io::StderrLock<'a>),
     Out(io::StdoutLock<'a>),
 }
