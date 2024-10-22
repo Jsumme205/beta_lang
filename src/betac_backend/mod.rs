@@ -126,7 +126,7 @@ impl<'src> WriteIr for Vec<Argument<'src>> {
     }
 }
 
-impl<'src> WriteIr for Expr<'src> {
+impl WriteIr for Expr {
     fn lower(
         self,
         writer: &mut crate::betac_backend::IrCodegen,

@@ -8,6 +8,7 @@
 
 use std::{collections::HashMap, fmt::Debug};
 
+use betac_errors::Emitter;
 use betac_lexer::{Lexer, SourceCodeReader};
 use betac_util::{session::Session, Yarn};
 
@@ -42,6 +43,8 @@ fn main() -> betac_util::CompileResult<()> {
     let mut session = Session::builder().input("src/test.blp").build()?;
     let input = yarn!("let x: Int64 => 0;");
     let mut lexer = Lexer::init(&input, &mut session);
-    let _ = lexer.parse_next_expr();
+    let expr = lexer.parse_next_expr();
+    println!("expr: {:#?}", expr);
+    lexer.drain()?;
     Ok(())
 }

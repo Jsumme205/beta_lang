@@ -8,7 +8,7 @@ use std::{
 use ast_types::{AnyMetadata, Metadata, Token, CONSTEXPR, PUBLIC, STATIC};
 
 use crate::{
-    betac_errors::LexerError,
+    betac_errors::{LexerEntry, LexerError},
     betac_pp::cursor::CursorLike,
     betac_util::{self, session::Session, sso::Bytes, Yarn},
 };
@@ -33,7 +33,7 @@ impl<'a> SourceCodeReader<'a> {
         }
     }
 
-    pub fn next_token(&mut self, nl_count: u32) -> Rc<ast_types::Token<'a>> {
+    pub fn next_token(&mut self, nl_count: u32) -> Rc<ast_types::Token> {
         let start = self.pos;
         let (raw_token, pos) = match self.bump().unwrap_or('\0') {
             '\0' => (ast_types::RawToken::Eof, 1),
@@ -80,8 +80,8 @@ impl<'a> SourceCodeReader<'a> {
         self.column
     }
 
-    fn number(&mut self) -> (ast_types::RawToken<'a>, u32) {
-        let number: Yarn<'a> = unsafe {
+    fn number(&mut self) -> (ast_types::RawToken, u32) {
+        let number: Yarn<'static> = unsafe {
             Yarn::from_utf8_unchecked_owned(
                 self.bump_while(|c| {
                     let c = *c;
@@ -95,9 +95,9 @@ impl<'a> SourceCodeReader<'a> {
         (ast_types::RawToken::Number(number), len as u32)
     }
 
-    fn ident(&mut self, c: char) -> (ast_types::RawToken<'a>, u32) {
+    fn ident(&mut self, c: char) -> (ast_types::RawToken, u32) {
         let mut buf = vec![c];
-        let ident: Yarn<'a> = unsafe {
+        let ident: Yarn<'static> = unsafe {
             Yarn::from_utf8_unchecked_owned(
                 self.bump_while(|c| {
                     println!("c_69: {c}");
@@ -115,7 +115,7 @@ impl<'a> SourceCodeReader<'a> {
 }
 
 impl<'a> Iterator for SourceCodeReader<'a> {
-    type Item = Rc<ast_types::Token<'a>>;
+    type Item = Rc<ast_types::Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.next_token(0);
@@ -176,11 +176,11 @@ impl<'a> CursorLike for SourceCodeReader<'a> {
 
 pub struct Lexer<'a> {
     token_reader: SourceCodeReader<'a>,
-    last_significant_token: Rc<ast_types::Token<'a>>,
-    currently_evaluated_token: Rc<ast_types::Token<'a>>,
+    last_significant_token: Rc<ast_types::Token>,
+    currently_evaluated_token: Rc<ast_types::Token>,
     session: &'a mut Session,
     nl_count: usize,
-    pub(crate) errors: RwLock<Vec<LexerError<'a>>>,
+    pub(crate) errors: RwLock<Vec<LexerEntry>>,
     pub(crate) guard: AtomicBool,
 }
 
@@ -216,7 +216,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn parse_next_expr(&mut self) -> Option<ast_types::Expr<'a>> {
+    pub fn parse_next_expr(&mut self) -> Option<ast_types::Expr> {
         println!("initial_token: {:#?}", self.currently_evaluated_token);
         loop {
             println!("got to 177");

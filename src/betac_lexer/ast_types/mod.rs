@@ -8,6 +8,7 @@ use std::{
     fmt::Debug,
     io::Write,
     os::{fd::RawFd, unix::io},
+    usize,
 };
 
 pub mod assignment;
@@ -21,13 +22,13 @@ use defun::{Argument, DefunMeta};
 use imports::ImportMeta;
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
-pub enum RawToken<'src> {
+pub enum RawToken {
     Plus,
     Minus,
     Assign,
-    Ident(Yarn<'src>),
-    Number(Yarn<'src>),
-    LitStr(Yarn<'src>),
+    Ident(Yarn<'static>),
+    Number(Yarn<'static>),
+    LitStr(Yarn<'static>),
     OneEq(u8),
     EqEq([u8; 2]),
     Whitespace,
@@ -51,16 +52,16 @@ pub enum RawToken<'src> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
-pub struct Token<'src> {
+pub struct Token {
     start: u32,
     end: u32,
-    inner: RawToken<'src>,
+    inner: RawToken,
     line: u32,
     column: u32,
 }
 
-impl<'src> Token<'src> {
-    pub fn new(raw: RawToken<'src>, start: u32, end: u32, line: u32, column: u32) -> Self {
+impl Token {
+    pub fn new(raw: RawToken, start: u32, end: u32, line: u32, column: u32) -> Self {
         Self {
             start,
             end,
@@ -70,7 +71,7 @@ impl<'src> Token<'src> {
         }
     }
 
-    pub fn as_raw(&self) -> &RawToken<'src> {
+    pub fn as_raw(&self) -> &RawToken {
         &self.inner
     }
 
@@ -99,7 +100,7 @@ pub enum IdentOrLit<'src> {
     Str(Yarn<'src>),
 }
 
-impl<'src> Token<'src> {
+impl Token {
     pub fn is_sep(&self) -> bool {
         use RawToken::*;
         match self.inner {
@@ -116,7 +117,7 @@ impl<'src> Token<'src> {
         }
     }
 
-    pub fn number_or_ident(&self) -> Option<IdentOrLit<'src>> {
+    pub fn number_or_ident(&self) -> Option<IdentOrLit> {
         match &self.inner {
             RawToken::Ident(id) => Some(IdentOrLit::Ident(id.clone())),
             RawToken::LitStr(lit) => Some(IdentOrLit::Str(lit.clone())),
@@ -133,9 +134,16 @@ impl<'src> Token<'src> {
         }
     }
 
-    pub fn as_ident(&self) -> Option<&Yarn<'src>> {
+    pub fn as_ident(&self) -> Option<&Yarn<'static>> {
         match &self.inner {
             RawToken::Ident(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    pub fn as_number(&self) -> Option<&Yarn<'static>> {
+        match &self.inner {
+            RawToken::Number(id) => Some(id),
             _ => None,
         }
     }
@@ -178,7 +186,7 @@ impl<'src> Token<'src> {
     }
 }
 
-impl PartialEq<RawToken<'_>> for Token<'_> {
+impl PartialEq<RawToken> for Token {
     fn eq(&self, other: &RawToken) -> bool {
         self.inner == *other
     }
@@ -200,6 +208,8 @@ impl Ty {
     pub const TY_UINT64: Self = Self(7);
     pub const TY_STR: Self = Self(8);
     pub const TY_BOOL: Self = Self(9);
+
+    pub const TY_UNKNOWN: Self = Self(usize::MAX);
 
     pub fn gen_from_session(session: &Session) -> Self {
         Self(session.get_next_type_id())
@@ -276,9 +286,9 @@ impl Ty {
 }
 
 #[derive(Debug)]
-pub enum Expr<'src> {
+pub enum Expr {
     Assignment {
-        ident: Yarn<'src>,
+        ident: Yarn<'static>,
         ty: Ty,
         value: Box<Self>,
         meta: AssignmentMeta,
@@ -290,25 +300,25 @@ pub enum Expr<'src> {
         ty: Ty,
         context_kind: ContextKind,
     },
-    Literal(Yarn<'src>),
-    LitOrIdent(Yarn<'src>, Ty),
-    Copy(Yarn<'src>),
+    Literal(Yarn<'static>),
+    LitOrIdent(Yarn<'static>, Ty),
+    Copy(Yarn<'static>),
     Call {
-        ident: Yarn<'src>,
-        args: Vec<Yarn<'src>>,
+        ident: Yarn<'static>,
+        args: Vec<Yarn<'static>>,
         ret_ty: Ty,
     },
     Defun {
         meta: DefunMeta,
-        args: Vec<Argument<'src>>,
-        expressions: Vec<Expr<'src>>,
+        args: Vec<Argument<'static>>,
+        expressions: Vec<Expr>,
         return_ty: Ty,
         ident: OwnedYarn,
     },
     Import {
         meta: ImportMeta,
-        root: Yarn<'src>,
-        rest: Vec<Yarn<'src>>,
+        root: Yarn<'static>,
+        rest: Vec<Yarn<'static>>,
     },
     Eof,
 }

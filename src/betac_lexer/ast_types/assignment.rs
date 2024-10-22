@@ -1,8 +1,9 @@
 use super::super::Lexer;
 use super::{Expr, Metadata, RawToken, Token};
-use crate::betac_errors::{BetaError, Emitter, ErrorBuilder};
-use crate::betac_lexer::ast_types::MUTABLE;
+use crate::betac_errors::{BetaError, Emitter, ErrorBuilder, Level};
+use crate::betac_lexer::ast_types::{Ty, MUTABLE};
 use crate::betac_util::Yarn;
+use std::rc::Rc;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -25,7 +26,7 @@ impl Metadata for AssignmentMeta {
 
 impl<'a> Lexer<'a> {
     // let x: Int64 => 0;
-    pub(in super::super) fn assignment(&mut self, mut meta: AssignmentMeta) -> Option<Expr<'a>> {
+    pub(in super::super) fn assignment(&mut self, mut meta: AssignmentMeta) -> Option<Expr> {
         let mut current_tokens = vec![];
         let mut brace_count = 0;
         let mut brace_entered = false;
@@ -76,30 +77,51 @@ impl<'a> Lexer<'a> {
                     "expected keyword `let`, found: {:#?}",
                     current_tokens[0]
                 ))
-                .token(current_tokens[0])
+                .token(current_tokens[0].clone())
                 .finish_and_report();
         }
 
-        let mut ident = Yarn::empty();
+        let mut idx_off = 0;
         if current_tokens[1].as_ident().is_some_and(|id| id == "mut") {
             meta = meta.add_flag(MUTABLE);
-        } else {
-            match current_tokens[1].as_ident() {
-                None => {
-                    self.emit()
-                        .message(format!(
-                            "exppected ident, found {:#?}",
-                            current_tokens[1].as_raw()
-                        ))
-                        .token(current_tokens[1])
-                        .finish_and_report();
-                }
-                Some(id) => ident = id.clone(),
-            }
+            idx_off = 1;
         }
 
-        if *current_tokens[2].as_raw() != RawToken::Colon {
+        let ident = if idx_off != 0 {
+            let current = current_tokens[1].clone();
+            match current.as_ident() {
+                Some(id) => id.clone(),
+                None => {
+                    self.emit()
+                        .column(current.column as usize)
+                        .line(current.line as usize)
+                        .message(format!("expected `ident`, found {current:#?}"))
+                        .token(current)
+                        .finish_and_report();
+                    return None;
+                }
+            }
+        } else {
             let current = current_tokens[2].clone();
+            match current.as_ident() {
+                Some(id) => id.clone(),
+                None => {
+                    self.emit()
+                        .column(current.column as usize)
+                        .line(current.line as usize)
+                        .message(format!(
+                            "expected `ident`, found {current:#?}",
+                            current = current.inner
+                        ))
+                        .token(current)
+                        .finish_and_report();
+                    return None;
+                }
+            }
+        };
+
+        if *current_tokens[2 + idx_off].as_raw() != RawToken::Colon {
+            let current = current_tokens[2 + idx_off].clone();
             self.emit()
                 .line(current.line as usize)
                 .column(current.column as usize)
@@ -108,12 +130,48 @@ impl<'a> Lexer<'a> {
                 .finish_and_report();
         }
 
+        let ty = if let Some(id) = current_tokens[3 + idx_off].as_ident() {
+            Ty::try_get(id.clone(), &self.session)?
+        } else {
+            let current = current_tokens[3 + idx_off].clone();
+            self.emit()
+                .column(current.column as usize)
+                .line(current.line as usize)
+                .level(Level::HardError)
+                .message(format!(
+                    "expected `Ty`, found: {current:#?}",
+                    current = current.inner
+                ))
+                .token(current)
+                .finish_and_report();
+            self.try_reset().ok()?;
+            return None;
+        };
+
+        let value = if let Some(id) = current_tokens[5 + idx_off].as_number() {
+            id.clone()
+        } else {
+            let current = current_tokens[5 + idx_off].clone();
+            self.emit()
+                .column(current.column as usize)
+                .line(current.line as usize)
+                .level(Level::HardError)
+                .message(format!(
+                    "expected `Value`, found: {current:#?}",
+                    current = current.inner
+                ))
+                .token(current)
+                .finish_and_report();
+            self.try_reset().ok()?;
+            return None;
+        };
+
         println!("tokens_64_assignment.rs: {current_tokens:#?}");
 
         Some(Expr::Assignment {
             ident,
-            ty: (),
-            value: (),
+            ty,
+            value: Box::new(Expr::Literal(value)),
             meta,
         })
     }
