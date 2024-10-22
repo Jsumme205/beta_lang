@@ -9,7 +9,7 @@ use std::{
 /// I honestly don't know why this is so complex, but I wanted to make it very builder-style,
 /// so it turned out like this
 use crate::betac_lexer::{
-    ast_types::{Expr, Token},
+    ast_types::{Expr, RawToken, Token},
     Lexer,
 };
 
@@ -80,7 +80,7 @@ pub trait Emitter<'a>: EmitterPrivate {
             .finish_and_report();
     }
 
-    fn try_reset(&mut self) -> Result<(), ()>;
+    fn try_reset(&mut self, delim: RawToken) -> Result<(), ()>;
 
     fn drain(&self) -> io::Result<()>;
 }
@@ -267,34 +267,34 @@ impl<'a> Emitter<'a> for Lexer<'a> {
         }
     }
 
-    fn try_reset(&mut self) -> Result<(), ()> {
-        todo!("put a similar loop to advance to the next expression")
+    fn try_reset(&mut self, delim: RawToken) -> Result<(), ()> {
+        self.expr_loop(delim);
+        Ok(())
     }
 
     fn drain(&self) -> io::Result<()> {
         // let's check if there are errors in the first place, before we have to loop through all of them
-        if !self.is_poisoned() {
-            let mut errors = self.errors.write().unwrap();
-            for error in errors.drain(..) {
-                let (mut io, msg) = match error.level {
-                    Level::HardError | Level::SoftError => (Io::Err(io::stderr().lock()), "ERROR:"),
-                    Level::Warning => (Io::Out(io::stdout().lock()), "WARNING:"),
-                };
+        let mut errors = self.errors.write().unwrap();
+        for error in errors.drain(..) {
+            let (mut io, msg) = match error.level {
+                Level::HardError | Level::SoftError => (Io::Err(io::stderr().lock()), "ERROR:"),
+                Level::Warning => (Io::Out(io::stdout().lock()), "WARNING:"),
+            };
 
-                writeln!(
-                    io,
-                    "{msg} {} at {}:{}",
-                    error.message.unwrap_or_default(),
-                    error.line,
-                    error.column,
-                )?;
-                writeln!(io, "current_token: {:#?}", error.token.as_raw())?;
-                if error.expr.is_some() {
-                    writeln!(io, "expression: {:#?}", error.expr.unwrap())?;
-                }
+            writeln!(
+                io,
+                "{msg} {} at {}:{}",
+                error.message.unwrap_or_default(),
+                error.line,
+                error.column,
+            )?;
+            writeln!(io, "current_token: {:#?}", error.token.as_raw())?;
+            if error.expr.is_some() {
+                writeln!(io, "expression: {:#?}", error.expr.unwrap())?;
             }
-            self.guard.store(false, Ordering::Relaxed);
         }
+        self.guard.store(false, Ordering::Relaxed);
+
         Ok(())
     }
 }

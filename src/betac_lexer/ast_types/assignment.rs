@@ -1,4 +1,5 @@
 use super::super::Lexer;
+use super::context::{Context, SymbolKind};
 use super::{Expr, Metadata, RawToken, Token};
 use crate::betac_errors::{BetaError, Emitter, ErrorBuilder, Level};
 use crate::betac_lexer::ast_types::{Ty, MUTABLE};
@@ -26,7 +27,11 @@ impl Metadata for AssignmentMeta {
 
 impl<'a> Lexer<'a> {
     // let x: Int64 => 0;
-    pub(in super::super) fn assignment(&mut self, mut meta: AssignmentMeta) -> Option<Expr> {
+    pub(in super::super) fn assignment(
+        &mut self,
+        mut meta: AssignmentMeta,
+        ctx: &mut dyn Context<'_>,
+    ) -> Option<Expr> {
         let mut current_tokens = vec![];
         let mut brace_count = 0;
         let mut brace_entered = false;
@@ -37,7 +42,6 @@ impl<'a> Lexer<'a> {
             || brace_entered && paren_count == 0
             || paren_entered
         {
-            println!("got to here_38");
             match &self.currently_evaluated_token.inner {
                 RawToken::Eof => break,
                 RawToken::LeftBrace => {
@@ -61,7 +65,6 @@ impl<'a> Lexer<'a> {
                 //RawToken::Semi => {}
                 _ => {}
             }
-            println!("current_60: {:#?}", self.currently_evaluated_token);
             current_tokens.push(self.currently_evaluated_token.clone());
             self.advance();
         }
@@ -87,11 +90,12 @@ impl<'a> Lexer<'a> {
             idx_off = 1;
         }
 
-        let ident = if idx_off != 0 {
+        let ident = if idx_off == 0 {
             let current = current_tokens[1].clone();
             match current.as_ident() {
                 Some(id) => id.clone(),
                 None => {
+                    println!("error_93");
                     self.emit()
                         .column(current.column as usize)
                         .line(current.line as usize)
@@ -103,9 +107,11 @@ impl<'a> Lexer<'a> {
             }
         } else {
             let current = current_tokens[2].clone();
+            println!("current: {current:#?}");
             match current.as_ident() {
                 Some(id) => id.clone(),
                 None => {
+                    println!("error_107");
                     self.emit()
                         .column(current.column as usize)
                         .line(current.line as usize)
@@ -134,6 +140,7 @@ impl<'a> Lexer<'a> {
             Ty::try_get(id.clone(), &self.session)?
         } else {
             let current = current_tokens[3 + idx_off].clone();
+            println!("error_135");
             self.emit()
                 .column(current.column as usize)
                 .line(current.line as usize)
@@ -144,7 +151,6 @@ impl<'a> Lexer<'a> {
                 ))
                 .token(current)
                 .finish_and_report();
-            self.try_reset().ok()?;
             return None;
         };
 
@@ -152,6 +158,7 @@ impl<'a> Lexer<'a> {
             id.clone()
         } else {
             let current = current_tokens[5 + idx_off].clone();
+            println!("error_152");
             self.emit()
                 .column(current.column as usize)
                 .line(current.line as usize)
@@ -162,11 +169,10 @@ impl<'a> Lexer<'a> {
                 ))
                 .token(current)
                 .finish_and_report();
-            self.try_reset().ok()?;
             return None;
         };
 
-        println!("tokens_64_assignment.rs: {current_tokens:#?}");
+        ctx.enter_symbol_into_scope(ident.clone(), SymbolKind::Assignment(ty, meta.to_vis()));
 
         Some(Expr::Assignment {
             ident,

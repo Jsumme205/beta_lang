@@ -9,7 +9,7 @@
 use std::{collections::HashMap, fmt::Debug};
 
 use betac_errors::Emitter;
-use betac_lexer::{Lexer, SourceCodeReader};
+use betac_lexer::{ast_types::context::GlobalContext, Lexer, SourceCodeReader};
 use betac_util::{session::Session, Yarn};
 
 pub const DEFAULT_PATTERN: [char; 2] = [';', ' '];
@@ -41,9 +41,9 @@ mod betac_util;
 
 fn main() -> betac_util::CompileResult<()> {
     let mut session = Session::builder().input("src/test.blp").build()?;
-    let input = yarn!("let x: Int64 => 0;");
+    let input = yarn!("pub defun foo(x: Int64, y: Int64) => Int64 {{ ret x + y; }}");
     let mut lexer = Lexer::init(&input, &mut session);
-    let expr = lexer.parse_next_expr();
+    let expr = lexer.parse_next_expr::<GlobalContext>(None);
     println!("expr: {:#?}", expr);
     lexer.drain()?;
     Ok(())

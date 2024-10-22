@@ -4,12 +4,19 @@ use std::{
     hash::Hasher,
     ops::BitXor,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicUsize, Ordering},
+    rc::Rc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        RwLock,
+    },
 };
 
-use super::sso::OwnedYarn;
+use super::{sso::OwnedYarn, Yarn};
 use crate::{
-    betac_lexer::ast_types::{context::PackageContext, Ty},
+    betac_lexer::ast_types::{
+        context::{GlobalContext, PackageContext},
+        Ty,
+    },
     Globals,
 };
 
@@ -29,6 +36,7 @@ pub struct Session {
     pub type_ids: AtomicUsize,
     pub types_hashmap: HashMap<usize, OwnedYarn, BuildHasherDefault<FxHasher>>,
     pub package_context: PackageContext,
+    pub in_file_name: String,
 }
 
 pub struct FxHasher {
@@ -154,8 +162,8 @@ impl SessionBuilder {
 
     pub fn build(self) -> super::CompileResult<Session> {
         let in_path = self.in_file.unwrap();
-        let contents: OwnedYarn = std::fs::read_to_string(in_path)?.into();
-        Ok(Session {
+        let contents: OwnedYarn = std::fs::read_to_string(&in_path)?.into();
+        let sess = Session {
             globals: Globals::new(),
             contents,
             out_dir: self.out_file,
@@ -164,7 +172,9 @@ impl SessionBuilder {
             type_ids: AtomicUsize::new(Ty::OFFSET_FROM_BUILTIN),
             types_hashmap: HashMap::with_hasher(BuildHasherDefault::default()),
             package_context: PackageContext::init(),
-        })
+            in_file_name: String::from(in_path.to_string_lossy()),
+        };
+        Ok(sess.setup_file_context())
     }
 }
 
@@ -188,5 +198,16 @@ impl Session {
 
     pub fn register(&mut self, k: usize, v: OwnedYarn) {
         let _ = self.types_hashmap.insert(k, v);
+    }
+
+    fn setup_file_context(mut self) -> Self {
+        GlobalContext::init(&self.in_file_name, &mut self.package_context);
+        self
+    }
+
+    pub fn get_current_context(&self) -> Rc<RwLock<GlobalContext>> {
+        self.package_context
+            .get_global_context(&Yarn::borrowed(self.in_file_name.as_str()).leak())
+            .unwrap()
     }
 }

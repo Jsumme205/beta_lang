@@ -19,7 +19,7 @@ pub mod imports;
 pub use assignment::AssignmentMeta;
 use context::ContextKind;
 use defun::{Argument, DefunMeta};
-use imports::ImportMeta;
+use imports::{ImportKind, ImportMeta};
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub enum RawToken {
@@ -319,6 +319,7 @@ pub enum Expr {
         meta: ImportMeta,
         root: Yarn<'static>,
         rest: Vec<Yarn<'static>>,
+        kind: ImportKind,
     },
     Eof,
 }
@@ -353,6 +354,7 @@ pub const STATIC: u8 = 1 << 1;
 pub const CONSTEXPR: u8 = 1 << 2;
 pub const MUTABLE: u8 = 1 << 3;
 pub const PUBLIC: u8 = 1 << 4;
+pub const CONSUMER: u8 = 1 << 5;
 
 pub trait Metadata: Copy {
     fn init() -> Self;

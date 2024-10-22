@@ -12,7 +12,7 @@ use std::{
 use super::Ty;
 
 type FxHashSet<T> = HashSet<T, BuildFxHasher>;
-type FxHashMap<K, V> = HashMap<K, V>;
+pub type FxHashMap<K, V> = HashMap<K, V>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SymbolKind {
@@ -77,10 +77,8 @@ impl PackageContext {
         }
     }
 
-    pub fn get_global_context(&self, name: &'static str) -> Option<Rc<RwLock<GlobalContext>>> {
-        self.global_contexts
-            .get(&Yarn::constant(name))
-            .map(|rc| rc.clone())
+    pub fn get_global_context(&self, name: &Yarn<'static>) -> Option<Rc<RwLock<GlobalContext>>> {
+        self.global_contexts.get(&name).map(|rc| rc.clone())
     }
 }
 
@@ -90,13 +88,13 @@ pub struct GlobalContext {
 }
 
 impl GlobalContext {
-    pub fn init(name: &'static str, ctx: &mut PackageContext) -> &'static str {
+    pub fn init<'a>(name: &str, ctx: &mut PackageContext) {
         let this = Self {
             global_symbols: Default::default(),
         };
         let this = Rc::new(RwLock::new(this));
-        ctx.global_contexts.insert(Yarn::constant(name), this);
-        name
+        ctx.global_contexts
+            .insert(Yarn::owned(name.to_string()), this);
     }
 
     pub fn global_symbols(&self) -> &FxHashMap<Yarn<'static>, SymbolKind> {
@@ -104,13 +102,13 @@ impl GlobalContext {
     }
 }
 
-impl Context<'static> for GlobalContext {
+impl<'a> Context<'a> for GlobalContext {
     fn symbol_is_in_scope(&self, sym: &Yarn<'_>) -> bool {
         self.global_symbols.contains_key(sym)
     }
 
-    fn enter_symbol_into_scope(&mut self, sym: Yarn<'static>, kind: SymbolKind) -> bool {
-        !self.global_symbols.insert(sym, kind).is_some()
+    fn enter_symbol_into_scope(&mut self, sym: Yarn<'a>, kind: SymbolKind) -> bool {
+        !self.global_symbols.insert(sym.leak(), kind).is_some()
     }
 
     fn kind(&self) -> ContextKind {
@@ -140,8 +138,8 @@ impl Context<'static> for GlobalContext {
         self.global_symbols()
     }
 
-    fn symbols_in_context_mut(&mut self) -> &mut FxHashMap<Yarn<'static>, SymbolKind> {
-        &mut self.global_symbols
+    fn symbols_in_context_mut(&mut self) -> &mut FxHashMap<Yarn<'a>, SymbolKind> {
+        unimplemented!()
     }
 
     fn enter_symbol_into_parent_scope(&mut self, sym: Yarn<'static>, kind: SymbolKind) -> bool {
