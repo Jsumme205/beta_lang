@@ -3,14 +3,5 @@ name = "beta_lang"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-
-unicode-xid = "0.2.6"
-
-
-[features]
-
-[dev-dependencies]
-concat-idents = "1.1.5"
+libc = "0.2.161"
