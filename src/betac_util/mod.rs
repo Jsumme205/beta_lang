@@ -1,2 +1,4 @@
-pub mod heap_array;
+pub mod alloc;
+pub mod ptr;
+pub mod small_vec;
 pub mod sso;

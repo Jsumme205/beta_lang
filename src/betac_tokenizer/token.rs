@@ -1,13 +1,17 @@
 use super::Tokenizer;
-use std::{num::NonZero, sync::mpsc};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Token {
-    kind: TokenKind,
-    start: u32,
+    pub kind: TokenKind,
+    pub start: u32,
 }
 
 impl Token {
+    pub const DUMMMY: Self = Self {
+        kind: TokenKind::Eof,
+        start: 0,
+    };
+
     pub fn len(&self) -> Option<u32> {
         use TokenKind::*;
         match self.kind {
@@ -17,6 +21,26 @@ impl Token {
             AndAnd | PipePipe | FatArrow | EqEq | NotEq | LtEq | GtEq => Some(2),
             _ => None,
         }
+    }
+
+    pub fn kind(&self) -> TokenKind {
+        self.kind
+    }
+
+    pub fn is_whitespace_or_newline(&self) -> bool {
+        match self.kind {
+            TokenKind::Eof | TokenKind::Whitespace => true,
+            _ => false,
+        }
+    }
+}
+
+impl std::ops::Sub for Token {
+    type Output = u32;
+
+    /// for `Token` this subtracts the `start` from rhs
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.start - rhs.start
     }
 }
 
@@ -70,16 +94,19 @@ pub enum TokenKind {
     LtEq,
     /// >=
     GtEq,
-
+    /// ::
+    Path,
     Ident,
     Lifetime,
     Literal,
+    NewLine,
     Unknown,
 }
 
 impl TokenKind {
     fn single_char(c: u8) -> Option<TokenKind> {
         match c {
+            // SAFETY: TokenKind is guaranteed to be valid at these ranges
             32..=47 | 58..=64 | 91..=96 | 123..=126 => unsafe { Some(std::mem::transmute(c)) },
             _ => None,
         }
@@ -90,42 +117,53 @@ impl<'a> Tokenizer<'a> {
     pub fn advance_token(&mut self) -> Token {
         let start = self.idx;
         let kind = match self.bump().unwrap_or('\0') {
-            '=' if self.next() == '>' => {
+            '=' if self.nth_next(2) == '>' => {
+                println!("found => at: {start}");
                 self.bump();
                 TokenKind::FatArrow
             }
-            '&' if self.next() == '&' => {
+            '&' if self.nth_next(2) == '&' => {
                 self.bump();
                 TokenKind::AndAnd
             }
-            '|' if self.next() == '|' => {
+            '|' if self.nth_next(2) == '|' => {
                 self.bump();
                 TokenKind::PipePipe
             }
-            '=' if self.next() == '=' => {
+            '=' if self.nth_next(2) == '=' => {
                 self.bump();
                 TokenKind::EqEq
             }
-            '!' if self.next() == '=' => {
+            '!' if self.nth_next(2) == '=' => {
                 self.bump();
                 TokenKind::NotEq
             }
-            '>' if self.next() == '=' => {
+            '>' if self.nth_next(2) == '=' => {
                 self.bump();
                 TokenKind::GtEq
             }
-            '<' if self.next() == '=' => {
+            '<' if self.nth_next(2) == '=' => {
                 self.bump();
                 TokenKind::LtEq
+            }
+            ':' if self.nth_next(2) == ':' => {
+                self.bump();
+                TokenKind::Path
             }
             '"' => self.handle_literal_string(),
             '\'' => self.handle_literal_char(),
             ident if ident.is_ascii_alphabetic() || ident == '_' => self.handle_ident(),
             c if let Some(kind) = TokenKind::single_char(c as u8) => kind,
             num if num.is_ascii_digit() => self.handle_number(),
-            _ => TokenKind::Unknown,
+            '\n' => TokenKind::NewLine,
+            c => {
+                if c == '\n' {
+                    println!("newline found");
+                }
+                println!("unexpected: {c}");
+                TokenKind::Unknown
+            }
         };
-        self.bump();
         Token {
             kind,
             start: start as u32,
@@ -155,28 +193,7 @@ impl<'a> Tokenizer<'a> {
 
     fn handle_ident(&mut self) -> TokenKind {
         self.eat_while(|c| c.is_ascii_alphanumeric());
+        self.bump();
         TokenKind::Ident
     }
-}
-
-pub fn run_tokenizer(input: String) -> (mpsc::Receiver<Token>, std::thread::JoinHandle<()>) {
-    let (tx, rx) = mpsc::channel();
-
-    let handle = std::thread::spawn(move || {
-        let mut tokenizer = Tokenizer::new(&*input);
-        let iter = std::iter::from_fn(|| {
-            let next = tokenizer.advance_token();
-            if next.kind == TokenKind::Eof {
-                None
-            } else {
-                Some(next)
-            }
-        });
-
-        for token in iter {
-            tx.send(token).unwrap();
-        }
-    });
-
-    (rx, handle)
 }

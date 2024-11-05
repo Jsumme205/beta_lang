@@ -1,3 +1,5 @@
+use token::{Token, TokenKind};
+
 pub mod token;
 
 pub struct Tokenizer<'a> {
@@ -14,7 +16,10 @@ impl<'a> Tokenizer<'a> {
     }
 
     pub fn next(&self) -> char {
-        self.input[self.idx + 1] as char
+        self.input
+            .get(self.idx + 1)
+            .map(|c| *c as char)
+            .unwrap_or('\0')
     }
 
     pub fn prev(&self) -> char {
@@ -44,4 +49,20 @@ impl<'a> Tokenizer<'a> {
             self.bump();
         }
     }
+
+    pub fn as_str(&self) -> &str {
+        unsafe { std::str::from_utf8_unchecked(self.input) }
+    }
+}
+
+pub fn run_tokenizer(input: &str) -> impl Iterator<Item = Token> + '_ {
+    let mut tokenizer = Tokenizer::new(input);
+    std::iter::from_fn(move || {
+        let token = tokenizer.advance_token();
+        if token.kind() == TokenKind::Eof || token.kind() == TokenKind::Unknown {
+            None
+        } else {
+            Some(token)
+        }
+    })
 }
