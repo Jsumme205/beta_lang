@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use token::{Token, TokenKind};
 
 pub mod token;
@@ -55,10 +57,11 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
-pub fn run_tokenizer(input: &str) -> impl Iterator<Item = Token> + '_ {
-    let mut tokenizer = Tokenizer::new(input);
-    std::iter::from_fn(move || {
-        let token = tokenizer.advance_token();
+pub fn run_tokenizer(input: &str) -> impl Iterator<Item = Token> + Clone + '_ {
+    // TODO: if we ever do multithreaded stuff, then we need to change to Arc<Mutex<>>
+    let tokenizer = Rc::new(RefCell::new(Tokenizer::new(input)));
+    crate::betac_util::from_fn(move || {
+        let token = tokenizer.borrow_mut().advance_token();
         if token.kind() == TokenKind::Eof || token.kind() == TokenKind::Unknown {
             None
         } else {

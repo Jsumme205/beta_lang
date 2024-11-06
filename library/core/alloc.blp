@@ -1,6 +1,6 @@
 
 
-pack core::alloc {
+pack core::alloc;
 
     pub trait Allocator {
         alias Layout;
@@ -10,12 +10,9 @@ pack core::alloc {
 
     pub trait LocalAllocator: Allocator {
         alias Output;
+        pub mut unsafe defun allocateNum(number: Uint64) throws => *unsafe This.Output;
+        pub mut unsafe defun deallocateNum(slice: *unsafe This.Output) throws => Void;
 
-        pub mut unsafe defun allocateNum(number: Uint64) throws => *[This.Output];
-        pub mut unsafe defun deallocateNum(slice: *[This.Output]) throws => Void;
+        pub mut unsafe defun reallocate(slice: *unsafe This.Output, oldLen: Uint64, newLen: Uint64) => *unsafe This.Output;
 
     }
-
-
-
-}

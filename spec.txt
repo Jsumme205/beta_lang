@@ -73,3 +73,134 @@ I want to take features I like from Rust and combine them with C++
 
                 let mut bar: Int64 => 0;
                 let baz: Int32 => foo(&&mut bar);
+        7: pointers
+            There are a lot of pointerr types in this language, designed to be as safe as posible, but unsafe if
+            absolutely needed
+
+            *mut T and *T: these are the safe pointer types. They are guaranteed to be non-null and well-aligned.
+            most of the times, unless you're dealing with FFI and syscalls, You're going to be dealing with these.
+            These are still unsafe, if you use them wrong, however. allthough non-null and well-aligned, they are not
+            guaranteed to point to valid data. These are covariant with unsafe pointers, as any pointer that is unsafe
+            can be replaced with a safe pointer.
+
+            *unsafe T and *unsafe mut T: these are the unsafe pointer types. they basically have no guarantees, and
+            thus are highly unsafe to use.
+Common operators:
+    => (The Bind operator)
+        - This operator "Binds" A value to a certain expression.
+        - this applies to functions as well as variables
+        - some expressions can only bind to certain values (e.g: a function cannot bind to a literal value,
+            while a variable cannot bind to a type)
+        - ex:
+            let x => 0;
+            pub defun foo(x: &Str) => Int64 { .. }
+    . (The Dot operator)
+        - this operator is used to access fields and ascociated methods within an object or composition (only fields
+            can be in a composition, however)
+    * Dereference operator
+        - this operator is used to access fields and ascociated objects within the object that dereferences it.
+        - ex: toke this object
+            obj Foo {
+                pub someNum: Int64;
+
+                pub static defun Init(num: Int64) => This {
+                    ret This {
+                        .someNum => num
+                    };
+                }
+            }
+
+            lets say we want to access `someNum` from another object
+
+            obj Bar {
+
+                pub baz: Int32;
+
+                priv _foo: Foo;
+
+                pub static defun Init(num: Int64) => This {
+                    ret This {
+                        .baz: num -> Int32,
+                        ._foo: Foo.Init(num)
+                    };
+                }
+            }
+
+            extend Bar: Deref {
+                alias Output = Foo;
+                pub operator*() => &Foo {
+                    ret this._foo;
+                }
+            }
+
+            /// So now we can use it as such:
+
+            pub defun test() => Void {
+                let bar => Bar.Init(0);
+                // Outputs 0
+                std::println((*bar).someNum);
+            }
+    -> (Cast Operator)
+        - performs either a user-defined cast or a predefined cast betweeen two different types
+        - it is ALWAYS explicit, there is never an implicit cast
+        - ex:
+            let x: Int64 => 3;
+            let y: Int32 => x -> Int32?;
+            <ident> -> <ty>
+        - it is also used in generic bounds, for example
+            pub defun debug<Obj>(obj: &Obj) => Void
+            requires
+                Obj -> Debug,
+            {
+                // function body here
+            }
+            this makes sense (at least to me) because it checks whether `Obj` can be correctly casted into the
+            `Debug` trait.
+    ? (soft coercion operator)
+        - performs a early return from a function if the contained value is a invalid variant
+        - ex:
+            pub defun castAndPrint(x: Int64) throws => Int32 {
+                let val => x -> Int32?;
+                std::println(val);
+                ret val;
+            }
+
+            let result => castAndPrint(5)!; // prints 5
+            let result2 => castAndPrint(Int64::MAX)!; // prints nothing; panics
+
+    ! (hard coercion operator)
+        - performs a early return from the program if the contained value is a invalid variant
+        - ex:
+            pub defun castAndPrint(x: Int64) => Int32 {
+                let val => x -> Int32!;
+                std::println(val);
+                ret val;
+            }
+
+            let result => castAndPrint(5);
+            let resultTwo => castAndPrint(Int64::MAX); // panics
+naming conventions:
+    1. objects/compositions/traits are preferred PascalCase, as well as any type aliases
+    2. normal functions, including ascociated functions are written in camelCase,
+    3. static member functions are PascalCase (E.G, an initializer function)
+    4. variables are camelCase
+    5. constants and statics are SCREAMING_SNAKE_CASE
+    6. generic arguments are either one-letter OR a small word describing what it is
+        (E.G)
+            obj Foo<T> {}
+            obj SmartPtr<Ptr> {}
+
+core ideals
+    - everything that can be explicit, will be explicit.
+        - this includes
+            type casts,
+            type annotations,
+            allocation,
+            deallocation,
+            dereferencing,
+            result unwraping, etc.
+    - this is designed to be fast.
+    - modular, no preludes. You pay for what you get.
+        - I really don't like the design that rust has, where there is a prelude
+        - I want to ONLY pay for what I use
+    - in all places, this is really meant to be a tailored language to my likes and dislikes

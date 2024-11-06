@@ -86,6 +86,8 @@ pub enum TokenKind {
     PipePipe,
     /// =>
     FatArrow,
+    /// ->
+    CastOp,
     /// ==
     EqEq,
     /// !=
@@ -121,6 +123,10 @@ impl<'a> Tokenizer<'a> {
                 println!("found => at: {start}");
                 self.bump();
                 TokenKind::FatArrow
+            }
+            '-' if self.nth_next(2) == '>' => {
+                self.bump();
+                TokenKind::CastOp
             }
             '&' if self.nth_next(2) == '&' => {
                 self.bump();
