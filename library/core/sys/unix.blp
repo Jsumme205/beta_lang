@@ -21,8 +21,8 @@ pack core::sys::unix {
     pub(pack) const let STDOUT: Handle => 1;
 
     pub(pack) unsafe defun sysWrite(fd: Handle, slice: &[Uint8]) => Handle {
-        let ptr: *unsafe Uint8 => slice.asUnsafePtr;
-        let len: Usize => slice.length;
+        let ptr: *unsafe Uint8 => slice.unsafePtr();
+        let len: Usize => slice.len();
         let mut code: Int32 => 0;
 
         @asm(len => in(reg) len, ptr => in(reg) ptr, fd => in(reg) fd, code => inout(reg) code):
@@ -44,6 +44,8 @@ pack core::sys::unix {
             "syscall;"
         @end;
     }
+
+
 
 
 

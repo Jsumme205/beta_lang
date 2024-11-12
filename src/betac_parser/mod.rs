@@ -1,14 +1,21 @@
 use crate::{
-    betac_ast::{self, AstToken, AstType},
+    betac_ast::{
+        self,
+        preproc::{PreprocKind, PreprocessorStmt},
+        AstList, AstToken, AstType, Span,
+    },
+    betac_errors::{self, Reportable, SpanKind},
     betac_tokenizer::token::{Token, TokenKind},
-    betac_util::{ptr::Ptr, small_vec::SmallVec},
+    betac_util::{cell::RcCell, ptr::Ptr, small_vec::SmallVec},
 };
+
+pub mod preprocessor;
 
 pub struct Parser<'a, I> {
     tokens: I,
     input: &'a str,
-    idx: u32,
     last_token: Token,
+    list: AstList,
 }
 
 impl<'a, I> Parser<'a, I>
@@ -19,13 +26,12 @@ where
         Self {
             tokens: iter,
             input,
-            idx: 0,
             last_token: Token::DUMMMY,
+            list: AstList::new(),
         }
     }
 
     fn reconstruct_from_start_len(&self, start: u32, len: u32) -> &str {
-        println!("{start}..{end}", end = start + len);
         let end = start + len;
         &self.input[start as usize..end as usize]
     }
@@ -88,22 +94,53 @@ where
                 todo!()
             }
             Token {
-                start,
                 kind: TokenKind::At,
-            } if self.peek().unwrap().kind == TokenKind::Ident => {
+                ..
+            } => {
+                let next = self.peek().unwrap();
                 // this is most likely a preprocessor, so we need to check the next token
                 // is a ident, then check if its a valid preprocessor statement
+                if next.kind == TokenKind::Ident {
+                    let start = next.start;
+                    let next = self.bump_token().unwrap();
+                    let pproc = self.preprocessor(start, next.start);
+                    betac_ast::preprocessor(pproc)
+                } else {
+                    betac_ast::dummy()
+                }
             }
             _ => todo!(),
         };
+
+        let token = RcCell::new(AstToken::new(inner));
+
         todo!()
     }
 
-    fn assignment(&mut self) {}
+    fn assignment(&mut self) -> betac_ast::assign::Assign {
+        todo!()
+    }
 
-    fn preprocessor(&mut self) {}
+    fn preprocessor(&mut self, start: u32, next_start: u32) -> PreprocessorStmt {
+        let substr = self.reconstruct_from_start_len(start, next_start - start);
+        println!("substr: {substr}");
+        match substr {
+            "start" => self.handle_start(),
+            _ => {
+                betac_errors::preproc_errors::UnrecognizedPreprocMacro::builder()
+                    .message(format!("unrecognized preprocessor in input: {substr}"))
+                    .span(Span::DUMMY, SpanKind::NoMeta)
+                    .report();
+                PreprocessorStmt::dummy()
+            }
+        }
+    }
 
     fn defun(&mut self) {}
 
     fn handle_rhs(&mut self) {}
+
+    pub fn complete(self) -> AstList {
+        todo!()
+    }
 }

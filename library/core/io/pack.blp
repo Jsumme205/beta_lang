@@ -2,11 +2,15 @@
 
 pack core::io {
 
+    pub comp Error {
+
+    }
+
     pub trait Writer {
-        pub mut defun write(buf: [Uint8]) throws => Uint64;
+        pub mut defun write(buf: [Uint8]) throws Error => Uint64;
     }
 
 
-    pub defun rawPrintln(writer: &mut obj Writer, buf: [Uint8]) throws => Void {}
+    pub defun rawPrintln(writer: &mut obj Writer, buf: [Uint8]) throws Error => Void {}
 
 }

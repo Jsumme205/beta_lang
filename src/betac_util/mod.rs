@@ -1,4 +1,5 @@
 pub mod alloc;
+pub mod cell;
 pub mod ptr;
 pub mod small_vec;
 pub mod sso;

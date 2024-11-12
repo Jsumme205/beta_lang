@@ -12,7 +12,7 @@ pack core::sys {
     @else @eval(ARCH == UNIX):
         Uint64
     @end;
-    pub(pack) defun panic(msg: Str) {
+    pub(pack) defun panic(msg: &[Uint8]) {
         @eval(OS_FAMILY == UNIX):
             unsafe {
                 let code => unix::sysWrite(1, unix::STDOUT, msg);

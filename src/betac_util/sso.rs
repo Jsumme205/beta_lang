@@ -153,6 +153,10 @@ impl<'a> Sso<'a> {
     }
 }
 
+impl Drop for Sso<'_> {
+    fn drop(&mut self) {}
+}
+
 #[test]
 #[cfg(test)]
 fn test_sso_has_niche() {
