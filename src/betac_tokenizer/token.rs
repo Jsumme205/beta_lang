@@ -3,7 +3,7 @@ use super::Tokenizer;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Token {
     pub kind: TokenKind,
-    pub start: u32,
+    pub start: u16,
 }
 
 impl Token {
@@ -12,7 +12,7 @@ impl Token {
         start: 0,
     };
 
-    pub fn len(&self) -> Option<u32> {
+    pub fn len(&self) -> Option<u16> {
         use TokenKind::*;
         match self.kind {
             At | Eq | LeftBrace | RightBrace | LeftParen | RightParen | LeftBracket
@@ -36,7 +36,7 @@ impl Token {
 }
 
 impl std::ops::Sub for Token {
-    type Output = u32;
+    type Output = u16;
 
     /// for `Token` this subtracts the `start` from rhs
     fn sub(self, rhs: Self) -> Self::Output {
@@ -117,7 +117,7 @@ impl TokenKind {
 
 impl<'a> Tokenizer<'a> {
     pub fn advance_token(&mut self) -> Token {
-        let start = self.idx;
+        let start = self.idx as u16;
         let kind = match self.bump().unwrap_or('\0') {
             '=' if self.nth_next(2) == '>' => {
                 println!("found => at: {start}");
@@ -170,10 +170,7 @@ impl<'a> Tokenizer<'a> {
                 TokenKind::Unknown
             }
         };
-        Token {
-            kind,
-            start: start as u32,
-        }
+        Token { kind, start }
     }
 
     fn handle_number(&mut self) -> TokenKind {
@@ -198,8 +195,14 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn handle_ident(&mut self) -> TokenKind {
-        self.eat_while(|c| c.is_ascii_alphanumeric());
-        self.bump();
+        let mut count = 0;
+        self.eat_while(|c| {
+            count += 1;
+            c.is_ascii_alphanumeric()
+        });
+        if count != 1 {
+            self.bump();
+        }
         TokenKind::Ident
     }
 }
