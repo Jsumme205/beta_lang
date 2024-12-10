@@ -1,5 +1,5 @@
 pub mod alloc;
-pub mod cell;
+pub mod linked_list;
 
 pub mod ptr;
 pub mod small_vec;
@@ -150,6 +150,26 @@ macro_rules! debug_dbg_impl {
 
 pub(crate) use debug_dbg_impl as ddbg;
 
-pub trait Source {
-    fn reconstruct_from_start_len(&self, start: u32, len: u32) -> &str;
+#[macro_export]
+macro_rules! catch {
+    (dbg $caught:ident) => {{
+        println!("caught: {:?}", $caught);
+        todo!()
+    }};
+    ($caught:ident) => {{
+        println!("caught: {}", $caught);
+        todo!()
+    }};
+    (tok $caught:ident, $this:expr) => {{
+        println!("caught token: {:?}", $caught);
+        if let Some(next) = $this.peek() {
+            let substr = unsafe {
+                $this
+                    .source
+                    .reconstruct_from_start_end_unchecked($caught.start, next.start)
+            };
+            println!("substring: {}", substr);
+        }
+        todo!()
+    }};
 }

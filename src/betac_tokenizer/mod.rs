@@ -17,6 +17,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
+    #[deprecated]
     pub fn next(&self) -> char {
         self.input
             .get(self.idx + 1)
@@ -24,10 +25,15 @@ impl<'a> Tokenizer<'a> {
             .unwrap_or('\0')
     }
 
+    pub fn next_alt(&self) -> char {
+        self.input.get(self.idx).map(|c| *c as char).unwrap_or('\0')
+    }
+
     pub fn prev(&self) -> char {
         self.input[self.idx - 1] as char
     }
 
+    #[deprecated]
     pub fn nth_next(&self, pos: usize) -> char {
         self.input[self.idx + pos] as char
     }
@@ -47,7 +53,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     pub fn eat_while(&mut self, mut pred: impl FnMut(char) -> bool) {
-        while pred(self.next()) && !self.is_eof() {
+        while pred(self.next_alt()) && !self.is_eof() {
             self.bump();
         }
     }

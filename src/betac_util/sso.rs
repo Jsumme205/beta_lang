@@ -1,4 +1,6 @@
-use std::{marker::PhantomData, num::NonZero};
+use std::{alloc::Layout, fmt::Debug, marker::PhantomData, num::NonZero};
+
+use crate::betac_parser::traits::Source;
 
 const SMALL: u8 = 1;
 const STATIC: u8 = 2;
@@ -151,10 +153,90 @@ impl<'a> Sso<'a> {
             _ph: PhantomData,
         }
     }
+
+    const fn owned_inner(data: Box<str>) -> Sso<'static> {
+        let len = data.len();
+        let ptr = data.as_ptr();
+        std::mem::forget(data);
+        let raw = unsafe { RawSso::from_raw_parts(ptr, len, HEAP) };
+        Sso {
+            raw,
+            _ph: PhantomData,
+        }
+    }
+
+    pub const fn from_boxed_str(data: Box<str>) -> Sso<'static> {
+        Self::owned_inner(data)
+    }
+
+    pub fn from_string(data: String) -> Sso<'static> {
+        Self::owned_inner(data.into_boxed_str())
+    }
+
+    pub const fn as_bytes(&self) -> &[u8] {
+        unsafe { self.raw.as_slice() }
+    }
+
+    pub const fn len(&self) -> usize {
+        unsafe { self.raw.len() }
+    }
+
+    pub const fn borrow<'b>(&'b self) -> Sso<'b>
+    where
+        'a: 'b,
+    {
+        unsafe { Sso::from_ascii_unchecked(self.as_bytes()) }
+    }
+
+    pub const unsafe fn from_ascii_unchecked(data: &'a [u8]) -> Self {
+        let ptr = data.as_ptr();
+        let len = data.len();
+        let raw = RawSso::from_raw_parts(ptr, len, BORROWED);
+        Self {
+            raw,
+            _ph: PhantomData,
+        }
+    }
+
+    pub const fn as_str(&self) -> &str {
+        unsafe { std::str::from_utf8_unchecked(self.as_bytes()) }
+    }
+}
+
+impl<'a> Source for Sso<'a> {
+    #[cfg(debug_assertions)]
+    fn length(&self) -> usize {
+        self.len()
+    }
+
+    unsafe fn reconstruct_from_start_end_unchecked(&self, start: u16, end: u16) -> &str {
+        std::str::from_utf8_unchecked(self.as_bytes().get_unchecked(start as usize..end as usize))
+    }
+}
+
+impl<'a> Debug for Sso<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            f.write_str(self.as_str())
+        } else {
+            f.debug_struct("Sso<'_>")
+                .field("value", &self.as_str())
+                .field("len", &self.len())
+                .finish()
+        }
+    }
 }
 
 impl Drop for Sso<'_> {
-    fn drop(&mut self) {}
+    fn drop(&mut self) {
+        unsafe {
+            if self.raw.kind() == HEAP {
+                let layout = Layout::array::<u8>(self.len()).unwrap();
+                std::ptr::drop_in_place(self.raw.as_mut_slice());
+                std::alloc::dealloc(self.raw.assume_heap().data as *mut u8, layout);
+            }
+        }
+    }
 }
 
 #[test]

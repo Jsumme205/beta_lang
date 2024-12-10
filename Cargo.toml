@@ -4,4 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-libc = "0.2.161"
+async-task = "4.7.1"
+io-uring = "0.7.2"
+mio = {version = "1.0.3", features = ["os-poll", "net"]}
+slab = "0.4.9"

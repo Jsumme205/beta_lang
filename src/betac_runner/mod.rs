@@ -6,8 +6,10 @@ use std::{
 };
 
 pub mod fx_hasher;
-use fx_hasher::FxHashMap;
+pub mod runner;
 
+pub mod simple_runner;
+use fx_hasher::FxHashMap;
 use std::sync::{LazyLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 static SESSION: LazyLock<RwLock<Session>> = LazyLock::new(|| {
@@ -31,7 +33,7 @@ impl Flags {
     pub const RELEASE_MODE: u8 = 1 << 2;
 }
 
-enum SymbolKind {
+pub enum SymbolKind {
     Function,
     Static,
     Constexpr,
@@ -102,6 +104,7 @@ pub enum Response {
     Help,
     Version,
     Run { file_name: String },
+    Build,
 }
 
 pub fn parse_command_line_args() -> Result<Response, std::io::Error> {

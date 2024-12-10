@@ -1,362 +1,205 @@
+use pproc::{Tag, Tags};
+
 use crate::{
-    betac_runner::Session,
-    betac_tokenizer::token::Token,
-    betac_util::{cell::RcCell, ptr::Ptr},
+    betac_runner::fx_hasher::FxHashMap,
+    betac_util::{
+        linked_list::{Link, LinkedList, Pointers},
+        ptr::Ptr,
+        small_vec::SmallVec,
+    },
 };
+
 use core::fmt;
 use std::{
-    alloc::{self, Layout},
     fmt::Debug,
-    sync::atomic::{AtomicU8, Ordering},
+    pin::Pin,
+    ptr::NonNull,
+    rc::Rc,
+    sync::{
+        atomic::{AtomicU16, AtomicU8, Ordering},
+        LazyLock, Mutex,
+    },
 };
 
-pub mod assign;
-pub mod defun;
-pub mod eof;
-pub mod preproc;
+pub mod assignment;
+pub mod pproc;
 
-use assign::Assign;
-use defun::Defun;
-use eof::Eof;
+static SYNTAX_TREE_LISTS: LazyLock<Mutex<FxHashMap<u16, SyntaxTree>>> =
+    LazyLock::new(|| Mutex::new(FxHashMap::default()));
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+static TAG_LISTS: LazyLock<Mutex<FxHashMap<u16, Tags>>> =
+    LazyLock::new(|| Mutex::new(FxHashMap::default()));
+
+static TREE_COUNT: AtomicU16 = AtomicU16::new(1);
+static TAG_COUNT: AtomicU16 = AtomicU16::new(1);
+
+pub(crate) fn register_new_list() -> u16 {
+    let count = TREE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+    let mut lock = SYNTAX_TREE_LISTS.lock().unwrap();
+    let _ = lock.insert(count, SyntaxTree::new());
+    count
+}
+
+pub(crate) fn register_new_tag() -> u16 {
+    let count = TAG_COUNT.fetch_add(1, Ordering::SeqCst);
+    let mut lock = TAG_LISTS.lock().unwrap();
+    let _ = lock.insert(count, SmallVec::new());
+    count
+}
+
+pub(crate) fn with_syntax_list<F, R>(key: u16, f: F) -> Option<R>
+where
+    F: FnOnce(&mut SyntaxTree) -> R,
+{
+    let mut lock = SYNTAX_TREE_LISTS.lock().ok()?;
+    let list = lock.get_mut(&key)?;
+    let r = f(list);
+    drop(lock);
+    Some(r)
+}
+
+pub(crate) fn with_tags<F, R>(key: u16, f: F) -> Option<R>
+where
+    F: FnOnce(&mut Tags) -> R,
+{
+    let mut lock = TAG_LISTS.lock().ok()?;
+    let list = lock.get_mut(&key)?;
+    let r = f(list);
+    drop(lock);
+    Some(r)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Metadata(u8);
 
-#[derive(Debug, Clone, Copy)]
-pub enum Vis {
-    Priv,
-    Pub,
-    PubPack,
-}
-
 impl Metadata {
-    pub const PUBLIC: u8 = 1 << 0;
-    pub const STATIC: u8 = 1 << 1;
-    pub const CONSTEXPR: u8 = 1 << 2;
-    pub const CONSUMER: u8 = 1 << 3;
-    pub const MUTABLE: u8 = 1 << 4;
-    pub const PRIVATE: u8 = 1 << 5;
-
-    pub const DUMMY: Self = Self(0);
-
-    pub const fn new() -> Self {
-        Self(0)
-    }
-
-    pub const fn has_flag_set(&self, flag: u8) -> bool {
-        self.0 & flag != 0
-    }
-
-    pub fn from_atomic(v: &AtomicU8) -> Self {
-        Self(v.load(Ordering::SeqCst))
-    }
-
-    pub const fn add(self, flag: u8) -> Self {
-        Self(self.0 | flag)
-    }
-
-    pub const fn is_pack_public(&self) -> bool {
-        self.0 & Self::PUBLIC != 0 && self.0 & Self::PRIVATE != 0
-    }
-
-    pub const fn is_public(&self) -> bool {
-        self.0 & Self::PUBLIC != 0 && self.0 & Self::PRIVATE == 0
-    }
-
-    pub const fn is_private(&self) -> bool {
-        self.0 & Self::PRIVATE != 0 && !self.is_public()
-    }
-
-    pub fn as_vis(&self) -> Vis {
-        if self.is_public() {
-            Vis::Pub
-        } else if self.is_private() {
-            Vis::Priv
-        } else {
-            Vis::PubPack
-        }
-    }
+    pub const STATIC: u8 = 1 << 0;
 }
 
-impl Debug for Metadata {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Metadata")
-            .field("vis", &self.as_vis())
-            .field("static", &self.has_flag_set(Self::STATIC))
-            .field("constexpr", &self.has_flag_set(Self::CONSTEXPR))
-            .field("consumer", &self.has_flag_set(Self::CONSUMER))
-            .field("mutable", &self.has_flag_set(Self::MUTABLE))
-            .finish()
-    }
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub struct Span {
-    pub start_pos: u16,
-    pub end_or_len_and_meta: SpanUnion,
-}
-
-impl Span {
-    pub const DUMMY: Span = Span {
-        start_pos: 0,
-        end_or_len_and_meta: SpanUnion { end_pos: 0 },
-    };
-
-    pub fn from_token_slice(slice: &[Token]) -> Self {
-        let first = slice.first().unwrap();
-        let last = slice.last().unwrap();
-        let mut me = Self::DUMMY;
-        me.start_pos = first.start;
-        me.end_or_len_and_meta.end_pos = last.start + last.len().unwrap_or(0);
-        me
-    }
-}
-
-impl fmt::Debug for Span {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Span")
-            .field("start_pos", &self.start_pos)
-            .finish_non_exhaustive()
-    }
-}
-
-#[derive(Clone, Copy)]
-pub union SpanUnion {
-    pub end_pos: u16,
-    pub len_and_meta: LenMeta,
-}
-
-impl PartialEq for SpanUnion {
-    fn eq(&self, other: &Self) -> bool {
-        unsafe { self.end_pos == other.end_pos }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct LenMeta {
-    pub len: u8,
-    pub meta: Metadata,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum AstKind {
-    Assign,
-    Defun,
-    Eof,
-    Pproc(preproc::PprocType),
-    Whitespace,
-    Newline,
-}
-
-pub trait AstType: fmt::Debug {
-    fn name_ident(&self) -> Token;
-
-    fn type_ident(&self) -> Token;
-
-    fn args_span(&self) -> Option<Span>;
-
-    fn kind(&self) -> AstKind;
-
-    fn is_dummy(&self) -> bool;
-
-    fn children_nodes(&self) -> Option<&AstList> {
-        None
-    }
-
-    fn has_children_nodes(&self) -> bool {
-        false
-    }
-}
-
-impl dyn AstType {
-    pub fn downcast_to_assign(&self) -> Assign {
-        assert!(self.kind() == AstKind::Assign);
-        unsafe { (self as *const _ as *const Assign).read() }
-    }
-
-    pub fn downcast_to_defun(&self) -> Defun {
-        assert!(self.kind() == AstKind::Assign);
-        unsafe { (self as *const _ as *const Defun).read() }
-    }
-
-    pub fn downcast_to_eof(&self) -> Eof {
-        assert!(self.kind() == AstKind::Eof);
-        unsafe { (self as *const _ as *const Eof).read() }
-    }
-
-    pub fn downcast_to_pproc(&self) -> preproc::PreprocessorStmt {
-        assert!(matches!(self.kind(), AstKind::Pproc(_)));
-        unsafe { (self as *const _ as *const preproc::PreprocessorStmt).read() }
-    }
-
-    pub fn downcast_to_whitespace(&self) -> eof::Whitespace {
-        assert!(self.kind() == AstKind::Whitespace);
-        unsafe { (self as *const _ as *const eof::Whitespace).read() }
-    }
-}
-
-pub fn allocate_and_write<T>(value: T) -> *mut T {
-    unsafe {
-        let ptr = alloc::alloc(Layout::new::<T>()) as *mut T;
-        if ptr.is_null() {
-            alloc::handle_alloc_error(Layout::new::<T>());
-        }
-        ptr.write(value);
-        ptr
-    }
-}
-
-pub fn dummy() -> Ptr<dyn AstType> {
-    unsafe { Ptr::from_raw(allocate_and_write(Assign::dummy())) }
-}
-
-macro_rules! ast_function {
-    ($f:ident => $ty:ty) => {
-        pub fn $f(x: $ty) -> $crate::betac_util::ptr::Ptr<dyn AstType> {
-            unsafe { $crate::betac_util::ptr::Ptr::from_raw(allocate_and_write(x)) }
-        }
-    };
-}
-
-ast_function!(assign => Assign);
-ast_function!(eof => Eof);
-ast_function!(preprocessor => preproc::PreprocessorStmt);
-ast_function!(defun => Defun);
-ast_function!(whitespace => eof::Whitespace);
-ast_function!(new_line => eof::Newline);
+pub type SyntaxTree = LinkedList<AstToken, <AstToken as Link>::Target>;
 
 pub struct AstToken {
-    prev: Option<RcCell<Self>>,
-    next: Option<RcCell<Self>>,
-    meta: Ptr<dyn AstType>,
+    data: Ptr<dyn AstNode>,
+    pointers: Pointers<AstToken>,
 }
 
-impl Debug for AstToken {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        struct FullTree<'a>(&'a AstToken);
-        struct NoTree<'a>(&'a AstToken);
+unsafe impl Link for AstToken {
+    type Handle = Pin<Rc<AstToken>>;
+    type Target = AstToken;
 
-        impl fmt::Debug for FullTree<'_> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                let mut builder = f.debug_struct("AstToken");
-                builder.field("meta", &self.0.meta);
-                if self.0.meta.has_children_nodes() {
-                    builder
-                        .field("children", self.0.meta.children_nodes().unwrap())
-                        .finish_non_exhaustive()
-                } else {
-                    builder.finish_non_exhaustive()
-                }
-            }
-        }
+    unsafe fn from_raw(target: std::ptr::NonNull<Self::Target>) -> Self::Handle {
+        Pin::new_unchecked(Rc::from_raw(target.as_ptr()))
+    }
 
-        impl fmt::Debug for NoTree<'_> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.debug_struct("AstToken")
-                    .field("meta", &self.0.meta)
-                    .finish_non_exhaustive()
-            }
-        }
+    unsafe fn pointers(target: std::ptr::NonNull<Self::Target>) -> Pointers<Self::Target> {
+        (*target.as_ptr()).pointers
+    }
 
-        if Session::has_full_tree_backtrace_set() {
-            FullTree(self).fmt(f)
-        } else {
-            NoTree(self).fmt(f)
-        }
+    fn as_raw(handle: &Self::Handle) -> std::ptr::NonNull<Self::Target> {
+        let handle = Pin::clone(handle);
+        let ptr = Rc::into_raw(unsafe { Pin::into_inner_unchecked(handle) });
+        unsafe { NonNull::new_unchecked(ptr as *mut _) }
     }
 }
 
 impl AstToken {
-    pub const fn new(meta: Ptr<dyn AstType>) -> Self {
-        Self {
-            prev: None,
-            next: None,
-            meta,
+    pub fn new(metadata: Ptr<dyn AstNode>) -> Pin<Rc<Self>> {
+        unsafe {
+            Pin::new_unchecked(Rc::new(Self {
+                data: metadata,
+                pointers: Pointers::new(),
+            }))
         }
     }
+}
 
-    pub fn dummy() -> Self {
-        Self::new(dummy())
+pub trait AstNode: fmt::Debug + Send {
+    fn start_pos(&self) -> u16 {
+        self.span().start_pos
     }
 
-    #[inline]
-    pub fn set_next(&mut self, next: RcCell<Self>) {
-        self.next = Some(next);
+    fn span(&self) -> Span;
+
+    fn metadata(&self) -> Option<Metadata>;
+
+    fn has_child_nodes(&self) -> bool {
+        false
     }
 
-    #[inline]
-    pub fn set_prev(&mut self, prev: RcCell<Self>) {
-        self.prev = Some(prev);
+    fn node_key(&self) -> Option<u16> {
+        None
     }
 
-    #[inline]
-    pub fn get_next(&self) -> Option<RcCell<Self>> {
-        self.next.clone()
-    }
-
-    #[inline]
-    pub fn get_prev(&self) -> Option<RcCell<Self>> {
-        self.prev.clone()
+    fn is_dummy(&self) -> bool {
+        false
     }
 }
 
-pub struct NodeVisitor {
-    current: RcCell<AstToken>,
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Span {
+    pub start_pos: u16,
+    pub len: u8,
+    pub meta: Metadata,
 }
 
-impl Iterator for NodeVisitor {
-    type Item = RcCell<AstToken>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let node = self.current.read().get_next()?;
-        self.current = node.clone();
-        Some(node)
-    }
+impl Span {
+    pub const DUMMY: Self = Self {
+        start_pos: 0,
+        len: 0,
+        meta: Metadata(0),
+    };
 }
 
-// constantly, the tail's next will point to the head
-// which means we only need to store the tail to implicitly store the head
-pub struct AstList {
-    tail: RcCell<AstToken>,
-}
-
-impl Debug for AstList {
+impl Debug for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_set().entries(self.visit()).finish()
+        if *self == Span::DUMMY {
+            f.write_str("<dummy>")
+        } else {
+            f.debug_struct("Span")
+                .field("start_pos", &self.start_pos)
+                .field("len", &self.len)
+                .field("meta", &self.meta)
+                .finish()
+        }
     }
 }
 
-impl AstList {
-    pub fn new() -> Self {
-        let head = RcCell::new(AstToken::dummy());
-        let tail = RcCell::new(AstToken::dummy());
-        let mut head_b = head.write();
-        let mut tail_b = tail.write();
-        tail_b.set_next(head.clone());
-        head_b.set_prev(tail.clone());
-        drop(tail_b);
-        Self { tail }
+pub struct NoOp;
+
+impl fmt::Debug for NoOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<no-op>")
+    }
+}
+
+impl AstNode for NoOp {
+    fn span(&self) -> Span {
+        Span::DUMMY
     }
 
-    pub fn push(&mut self, node: AstToken) {
-        let node = RcCell::new(node);
-        let prev = self.tail.read().prev.clone();
-        match prev {
-            Some(prev) => {
-                prev.write().set_next(node.clone());
-                node.write().set_prev(prev);
-                node.write().set_next(self.tail.clone());
-            }
-            None => {
-                self.tail.write().set_prev(node.clone());
-                node.write().set_next(self.tail.clone());
-            }
-        }
+    fn metadata(&self) -> Option<Metadata> {
+        None
     }
 
-    pub fn visit(&self) -> NodeVisitor {
-        NodeVisitor {
-            current: self.tail.read().get_next().unwrap(),
-        }
+    fn is_dummy(&self) -> bool {
+        true
+    }
+}
+
+pub struct AtomicMetadata(AtomicU8);
+
+impl AtomicMetadata {
+    pub fn get() -> &'static Self {
+        static ATOMIC: AtomicMetadata = AtomicMetadata(AtomicU8::new(0));
+        &ATOMIC
+    }
+
+    pub fn add_flag(&'static self, flag: u8) {
+        self.0.fetch_or(flag, Ordering::SeqCst);
+    }
+
+    pub fn to_metadata(&'static self) -> Metadata {
+        Metadata(self.0.load(Ordering::Acquire))
     }
 }

@@ -57,9 +57,13 @@ pub enum TokenKind {
     Gt = b'>',
     LeftParen = b'(',
     RightParen = b')',
+    /// [
     LeftBrace = b'[',
+    /// ]
     RightBrace = b']',
+    /// {
     LeftBracket = b'{',
+    /// }
     RightBracket = b'}',
     Semi = b';',
     Colon = b':',
@@ -118,41 +122,44 @@ impl TokenKind {
 impl<'a> Tokenizer<'a> {
     pub fn advance_token(&mut self) -> Token {
         let start = self.idx as u16;
-        let kind = match self.bump().unwrap_or('\0') {
-            '=' if self.nth_next(2) == '>' => {
+        let next = self.bump().unwrap_or('\0');
+        let kind = match next {
+            '\0' => TokenKind::Eof,
+            // TODO: fix all occurances so we can actually parse correctly
+            '=' if self.next_alt() == '>' => {
                 println!("found => at: {start}");
                 self.bump();
                 TokenKind::FatArrow
             }
-            '-' if self.nth_next(2) == '>' => {
+            '-' if self.next_alt() == '>' => {
                 self.bump();
                 TokenKind::CastOp
             }
-            '&' if self.nth_next(2) == '&' => {
+            '&' if self.next_alt() == '&' => {
                 self.bump();
                 TokenKind::AndAnd
             }
-            '|' if self.nth_next(2) == '|' => {
+            '|' if self.next_alt() == '|' => {
                 self.bump();
                 TokenKind::PipePipe
             }
-            '=' if self.nth_next(2) == '=' => {
+            '=' if self.next_alt() == '=' => {
                 self.bump();
                 TokenKind::EqEq
             }
-            '!' if self.nth_next(2) == '=' => {
+            '!' if self.next_alt() == '=' => {
                 self.bump();
                 TokenKind::NotEq
             }
-            '>' if self.nth_next(2) == '=' => {
+            '>' if self.next_alt() == '=' => {
                 self.bump();
                 TokenKind::GtEq
             }
-            '<' if self.nth_next(2) == '=' => {
+            '<' if self.next_alt() == '=' => {
                 self.bump();
                 TokenKind::LtEq
             }
-            ':' if self.nth_next(2) == ':' => {
+            ':' if self.next_alt() == ':' => {
                 self.bump();
                 TokenKind::Path
             }
@@ -166,7 +173,8 @@ impl<'a> Tokenizer<'a> {
                 if c == '\n' {
                     println!("newline found");
                 }
-                println!("unexpected: {c}");
+                println!("unexpected: {c}", c = c as u8);
+
                 TokenKind::Unknown
             }
         };
